@@ -3,9 +3,9 @@ from enum import Enum
 from typing import Optional
 
 import strawberry
-from sqlalchemy import select
 
-from hiccup.db import Session, AnonymousIdentify, ClassicIdentify
+from hiccup.db import AsyncSessionLocal
+from hiccup.db.user import ClassicIdentify, AnonymousIdentify
 
 
 @strawberry.enum
@@ -36,8 +36,8 @@ class AnonymousUser(UserBase):
 class UserQuery:
     @strawberry.field(description="Get user by id")
     async def get_user(self, uid: int) -> UserBase:
-        with Session() as session:
-            user: Optional[AnonymousIdentify] = session.get(AnonymousIdentify, uid)
+        async with AsyncSessionLocal() as session:
+            user: Optional[AnonymousIdentify] = await session.get(AnonymousIdentify, uid)
             if user is not None:
                 result = AnonymousUser()
                 result.id = uid
@@ -47,7 +47,7 @@ class UserQuery:
                 result.public_key = user.public_key
                 return result
 
-            user: Optional[ClassicIdentify]= session.get(ClassicIdentify, uid)
+            user: Optional[ClassicIdentify]= await session.get(ClassicIdentify, uid)
             if user is not None:
                 result = ClassicUser()
                 result.id = uid

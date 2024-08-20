@@ -1,6 +1,6 @@
 from hiccup.db.user import *
 from hiccup.db.server import *
-from hiccup.db.base import Base, DATABASE_URL, Session, get_db
+from hiccup.db.base import Base, DATABASE_URL, AsyncSessionLocal, get_db
 
 
 models = [
@@ -14,4 +14,4 @@ models = [
 ]
 
 
-__all__ = ['Base', 'DATABASE_URL', 'Session', 'get_db', 'models']
+__all__ = ['Base', 'DATABASE_URL', 'AsyncSessionLocal', 'get_db', 'models']
