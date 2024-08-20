@@ -13,7 +13,8 @@ from sqlalchemy import pool
 
 from alembic import context
 
-from hiccup.db import DATABASE_URL, Base
+from hiccup import SETTINGS
+from hiccup.db import Base
 
 
 # this is the Alembic Config object, which provides
@@ -21,8 +22,8 @@ from hiccup.db import DATABASE_URL, Base
 config = context.config
 
 # Set SQL url
-if DATABASE_URL is not None:
-    config.set_main_option('sqlalchemy.url', DATABASE_URL)
+if SETTINGS.database_url is not None:
+    config.set_main_option('sqlalchemy.url', SETTINGS.database_url)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
@@ -71,7 +72,7 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
-    if "async" in DATABASE_URL:
+    if "async" in config.get_main_option("sqlalchemy.url"):
         connectable = async_engine_from_config(
             config.get_section(config.config_ini_section, {}),
             prefix="sqlalchemy.",

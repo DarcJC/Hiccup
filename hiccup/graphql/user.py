@@ -1,12 +1,14 @@
 from datetime import datetime
 from enum import Enum
-from typing import Optional, Union
+from typing import Optional, Union, Literal
 
 import sqlalchemy
 import strawberry
+from sqlalchemy import select, ScalarResult
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from hiccup.captcha import IsPassedCaptcha
-from hiccup.db import AsyncSessionLocal
+from hiccup.db import AsyncSessionLocal, AuthToken
 from hiccup.db.user import ClassicIdentify, AnonymousIdentify
 
 
@@ -34,6 +36,11 @@ class ClassicUser(UserBase):
 class AnonymousUser(UserBase):
     type: UserType = UserType.ANONYMOUS
     public_key: str
+
+
+@strawberry.type
+class SessionToken:
+    token: str
 
 
 @strawberry.type
@@ -82,3 +89,17 @@ class UserMutation:
                 raise ValueError(f"User with public key '{public_key}' already registered")
             await session.refresh(new_user)
             return AnonymousUser(id=new_user.id, public_key=new_user.public_key.hex(), created_at=datetime.now(), updated_at=datetime.now())
+
+    @strawberry.mutation(description="Login classic user", permission_classes=[IsPassedCaptcha])
+    async def login_classic(self, username: str, password: str) -> SessionToken:
+        async with AsyncSessionLocal() as session:
+            db_user: ClassicIdentify = (await session.scalars(select(ClassicIdentify).where(ClassicIdentify.user_name == username).limit(1))).one_or_none()
+            if db_user is None:
+                raise ValueError(f"User {username} not found")
+            if not db_user.is_password_valid(password.encode("utf-8")):
+                raise ValueError("Invalid password")
+
+            token = AuthToken.new_classic_token(db_user.id)
+            session.add(token)
+            await session.commit()
+            return SessionToken(token=token.token)

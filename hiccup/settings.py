@@ -20,5 +20,7 @@ class Settings(BaseSettings):
 
     debug_enabled: Optional[bool] = Field(False)
 
+    session_valid_duration: Optional[int] = Field(86400)
+
 
 SETTINGS = Settings()
