@@ -1,4 +1,7 @@
+import asyncio
+
 from dotenv import load_dotenv
+from sqlalchemy.ext.asyncio import AsyncEngine, async_engine_from_config
 
 # Load env from .env file
 load_dotenv()
@@ -68,19 +71,38 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
-
-    with connectable.connect() as connection:
-        context.configure(
-            connection=connection, target_metadata=target_metadata
+    if "async" in DATABASE_URL:
+        connectable = async_engine_from_config(
+            config.get_section(config.config_ini_section, {}),
+            prefix="sqlalchemy.",
+            poolclass=pool.NullPool,
+        )
+    else:
+        connectable = engine_from_config(
+            config.get_section(config.config_ini_section, {}),
+            prefix="sqlalchemy.",
+            poolclass=pool.NullPool,
         )
 
-        with context.begin_transaction():
-            context.run_migrations()
+    if isinstance(connectable, AsyncEngine):
+        async def async_migrations():
+            async with connectable.connect() as async_conn:
+                await async_conn.run_sync(exec_migrations)
+            await connectable.dispose()
+
+        asyncio.run(async_migrations())
+    else:
+        with connectable.connect() as connection:
+            exec_migrations(connection)
+
+
+def exec_migrations(connection):
+    context.configure(
+        connection=connection, target_metadata=target_metadata
+    )
+
+    with context.begin_transaction():
+        context.run_migrations()
 
 
 if context.is_offline_mode():
