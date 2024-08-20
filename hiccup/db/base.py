@@ -1,13 +1,11 @@
-import os
+from hiccup import SETTINGS
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
 
 
 Base = declarative_base()
 
-DATABASE_URL = os.environ.get('DATABASE_URL', "sqlite:///test.db")
-engine = create_async_engine(DATABASE_URL)
+engine = create_async_engine(SETTINGS.database_url, echo=False)
 AsyncSessionLocal = async_sessionmaker(bind=engine, autocommit=False, autoflush=False, expire_on_commit=False, class_=AsyncSession)
 
 

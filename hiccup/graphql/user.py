@@ -5,6 +5,7 @@ from typing import Optional, Union
 import sqlalchemy
 import strawberry
 
+from hiccup.captcha import IsPassedCaptcha
 from hiccup.db import AsyncSessionLocal
 from hiccup.db.user import ClassicIdentify, AnonymousIdentify
 
@@ -53,7 +54,7 @@ class UserQuery:
 
 @strawberry.type
 class UserMutation:
-    @strawberry.mutation(description="Register classic user")
+    @strawberry.mutation(description="Register classic user", permission_classes=[IsPassedCaptcha])
     async def register_classic(self, username: str, password: str) -> ClassicUser:
         async with AsyncSessionLocal() as session:
             derived_key, salt = ClassicIdentify.encrypt_password(password.encode("utf-8"))
@@ -66,7 +67,7 @@ class UserMutation:
             await session.refresh(new_user)
             return ClassicUser(id=new_user.id, username=new_user.user_name, updated_at=new_user.updated_at, created_at=new_user.created_at)
 
-    @strawberry.mutation(description="Register anonymous user")
+    @strawberry.mutation(description="Register anonymous user", permission_classes=[IsPassedCaptcha])
     async def register_anonymous(self, public_key: str) -> AnonymousUser:
         public_key_bytes = bytes.fromhex(public_key)
         if not AnonymousIdentify.is_valid_ed25519_public_key(public_key_bytes):
@@ -80,4 +81,4 @@ class UserMutation:
             except sqlalchemy.exc.IntegrityError:
                 raise ValueError(f"User with public key '{public_key}' already registered")
             await session.refresh(new_user)
-            return AnonymousUser(id=new_user.id, public_key=public_key, created_at=datetime.now(), updated_at=datetime.now())
+            return AnonymousUser(id=new_user.id, public_key=new_user.public_key.hex(), created_at=datetime.now(), updated_at=datetime.now())
