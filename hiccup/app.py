@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 import strawberry
 from fastapi import FastAPI
 from strawberry.fastapi import GraphQLRouter
