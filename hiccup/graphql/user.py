@@ -6,6 +6,7 @@ import sqlalchemy
 import strawberry
 from sqlalchemy import select
 
+from hiccup.cache import cache_nonce
 from hiccup.captcha import IsPassedCaptcha
 from hiccup.db import AsyncSessionLocal, check_ed25519_signature
 from hiccup.db.user import ClassicIdentify, AnonymousIdentify, AuthToken
@@ -126,6 +127,9 @@ class UserMutation:
             db_user: AnonymousIdentify = (await session.scalars(select(AnonymousIdentify).where(AnonymousIdentify.public_key == public_key_bytes).limit(1))).one_or_none()
             if db_user is None:
                 raise ValueError(f"User with public key '{public_key}' not found")
+
+            if not await cache_nonce(nonce):
+                raise ValueError(f"Nonce '{nonce}' is already used, try another one.")
 
             token = AuthToken.new_anonymous_token(db_user.id)
             session.add(token)
