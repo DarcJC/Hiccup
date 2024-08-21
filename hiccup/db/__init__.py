@@ -14,4 +14,4 @@ models = [
 ]
 
 
-__all__ = ['Base', 'AsyncSessionLocal', 'get_db', 'models']
+__all__ = ['Base', 'AsyncSessionLocal', 'get_db', 'models', 'check_ed25519_signature']

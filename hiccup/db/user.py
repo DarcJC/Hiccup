@@ -5,7 +5,7 @@ from datetime import timedelta, datetime
 import random
 from typing import Optional
 
-from cryptography.exceptions import InvalidKey
+from cryptography.exceptions import InvalidKey, InvalidSignature
 from cryptography.hazmat.primitives.asymmetric import ed25519
 from sqlalchemy import Column, String, DateTime, func, Sequence, LargeBinary, BigInteger, ForeignKey, CheckConstraint
 from sqlalchemy.orm import relationship, validates
@@ -111,3 +111,14 @@ class AuthToken(Base):
     def new_anonymous_token(uid: int) -> 'AuthToken':
         token = ''.join(random.SystemRandom().choice(string.ascii_uppercase + string.digits) for _ in range(64))
         return AuthToken(token=token, anonymous_user_id=uid)
+
+
+def check_ed25519_signature(*, public_key: bytes, message: bytes, signature: bytes) -> bool:
+    public_key = ed25519.Ed25519PublicKey.from_public_bytes(public_key)
+    try:
+        public_key.verify(signature, message)
+        return True
+    except InvalidSignature:
+        pass
+
+    return False

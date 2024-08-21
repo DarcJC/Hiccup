@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     )
 
     database_url: Optional[str] = Field('sqlite:///test.db')
+    redis_url: Optional[str] = Field('redis://localhost:6379/0')
 
     captcha_enabled: Optional[bool] = Field(False)
     captcha_turnstile_secret: Optional[str] = Field('')

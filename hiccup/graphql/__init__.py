@@ -1,10 +1,11 @@
 import strawberry
 
 from hiccup.graphql.user import UserQuery, UserMutation
+from hiccup.graphql.system import SystemQuery
 
 
 @strawberry.type
-class Query(UserQuery):
+class Query(UserQuery, SystemQuery):
     pass
 
 
