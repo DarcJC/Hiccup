@@ -35,8 +35,7 @@ async def get_user_permission_no_cache(uid: int) -> Optional[set[str]]:
             permissions = set()
 
         for group in db_user.permission_groups:
-            group: PermissionGroup
-            permissions.union( { p for p in group.permissions } )
+            permissions = permissions.union( { p for p in group.permissions } )
 
         return permissions
 

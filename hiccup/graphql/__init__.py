@@ -1,6 +1,6 @@
 import strawberry
 
-from hiccup.graphql.user import UserQuery, UserMutation
+from hiccup.graphql.user import UserQuery, UserMutation, Context
 from hiccup.graphql.system import SystemQuery
 
 
@@ -14,4 +14,8 @@ class Mutation(UserMutation):
     pass
 
 
-__all__ = ['Query', 'Mutation']
+async def get_context() -> Context:
+    return Context()
+
+
+__all__ = ['Query', 'Mutation', 'get_context']

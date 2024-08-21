@@ -1,15 +1,44 @@
 from datetime import datetime, timedelta
 from enum import Enum
+from functools import cached_property
 from typing import Optional, Union, Annotated
 
 import sqlalchemy
 import strawberry
 from sqlalchemy import select
+from sqlalchemy.orm import joinedload
+from strawberry.fastapi import BaseContext
+from strawberry.permission import PermissionExtension
 
 from hiccup.cache import cache_nonce
-from hiccup.captcha import IsPassedCaptcha
+from hiccup.captcha import IsPassedCaptcha, HasPermission
 from hiccup.db import AsyncSessionLocal, check_ed25519_signature
 from hiccup.db.user import ClassicIdentify, AnonymousIdentify, AuthToken
+
+
+class Context(BaseContext):
+    async def user(self) -> Optional[Union['ClassicUser', 'AnonymousUser']]:
+        if not self.request:
+            return None
+
+        token = self.request.headers.get('X-Hiccup-Token', None)
+        if token is None:
+            return None
+
+        async with AsyncSessionLocal() as session:
+            db_token: Optional[AuthToken] = await session.scalar(select(AuthToken).options(joinedload(AuthToken.anonymous_identify), joinedload(AuthToken.classic_identify)).where(AuthToken.token == token).limit(1))
+            if db_token is None or db_token.is_expired:
+                return None
+
+            if db_token.anonymous_identify is not None:
+                anonymous: AnonymousIdentify = db_token.anonymous_identify
+                return AnonymousUser(id=anonymous.id, created_at=anonymous.created_at, updated_at=anonymous.updated_at, public_key=anonymous.public_key)
+
+            if db_token.classic_identify is not None:
+                classic: ClassicIdentify = db_token.classic_identify
+                return ClassicUser(id=classic.id, created_at=classic.created_at, updated_at=classic.updated_at, username=classic.user_name)
+
+        return None
 
 
 @strawberry.enum
@@ -59,6 +88,10 @@ class UserQuery:
                 return ClassicUser(id=uid, username=user.user_name, created_at=user.created_at, updated_at=user.updated_at)
 
             raise ValueError(f"User {uid} not found")
+
+    @strawberry.field(description="Get self info", extensions=[PermissionExtension(permissions=[HasPermission("self::query")])])
+    async def self_info(self, info: strawberry.Info[Context]) -> Union[ClassicUser, AnonymousUser]:
+        return await info.context.user()
 
 
 @strawberry.type

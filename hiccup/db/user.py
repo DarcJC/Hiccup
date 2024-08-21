@@ -119,6 +119,10 @@ class AuthToken(Base):
         token = ''.join(random.SystemRandom().choice(string.ascii_uppercase + string.digits) for _ in range(64))
         return AuthToken(token=token, anonymous_user_id=uid)
 
+    @property
+    def is_expired(self) -> bool:
+        return self.revoked_at < datetime.now(self.revoked_at.tzinfo)
+
 
 def check_ed25519_signature(*, public_key: bytes, message: bytes, signature: bytes) -> bool:
     public_key = ed25519.Ed25519PublicKey.from_public_bytes(public_key)
