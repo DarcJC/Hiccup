@@ -42,9 +42,13 @@ async def get_user_permission_no_cache(uid: int) -> Optional[set[str]]:
 
 
 async def get_user_permission_cached(uid: int) -> set[str]:
+    key = f'{PREFIX_MAP["user-permission"]}{uid}'
     async with AsyncRedisSessionLocal() as session:
-        value: list[bytes] = await session.lrange(f'{PREFIX_MAP["user-permission"]}{uid}', 0, -1)
-        if len(value) >= 0:
+        value: list[bytes] = await session.lrange(key, 0, -1)
+        if len(value) > 0:
             return { p.decode('utf-8') for p in value }
 
-    pass
+        value: set[str] = await get_user_permission_no_cache(uid)
+        await session.lpushx(key, *value)
+
+    return value

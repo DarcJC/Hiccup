@@ -7,6 +7,7 @@ from starlette.websockets import WebSocket
 from strawberry import BasePermission, Info
 
 from hiccup import SETTINGS
+from hiccup.cache import get_user_permission_cached
 from hiccup.captcha.turnstile import Turnstile
 from hiccup.db import AuthToken
 
@@ -30,6 +31,10 @@ class IsPassedCaptcha(BasePermission):
 class HasPermission(BasePermission):
     message = "Access denied"
 
+    def __init__(self, *required_permissions: str):
+        super().__init__()
+        self.required_permissions = set(required_permissions)
+
     async def has_permission(
             self, source: Any, info: Info, **kwargs: Any
     ) -> bool:
@@ -39,7 +44,8 @@ class HasPermission(BasePermission):
             async with AsyncSession() as session:
                 db_token: Optional[AuthToken] = (await session.scalars(select(AuthToken).where(AuthToken.token == access_token).limit(1))).one_or_none()
                 if db_token is not None:
-                    db_token.classic_user_id
+                    permissions = await get_user_permission_cached(db_token.id)
+                    return self.required_permissions.issubset(permissions)
 
         return False
 
