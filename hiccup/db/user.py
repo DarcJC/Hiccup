@@ -7,11 +7,13 @@ from typing import Optional
 
 from cryptography.exceptions import InvalidKey, InvalidSignature
 from cryptography.hazmat.primitives.asymmetric import ed25519
-from sqlalchemy import Column, String, DateTime, func, Sequence, LargeBinary, BigInteger, ForeignKey, CheckConstraint
+from sqlalchemy import Column, String, DateTime, func, Sequence, LargeBinary, BigInteger, ForeignKey, CheckConstraint, \
+    ARRAY
 from sqlalchemy.orm import relationship, validates
 
 from hiccup import SETTINGS
 from hiccup.db.base import Base
+from hiccup.db.permission import user_permission_group
 
 user_id_sequence = Sequence('user_id_seq', start=1)
 
@@ -20,10 +22,12 @@ class AnonymousIdentify(Base):
     __tablename__ = 'anonymous_identify'
     id = Column(BigInteger, user_id_sequence, server_default=user_id_sequence.next_value(), primary_key=True)
     public_key = Column(LargeBinary(length=32), nullable=False, unique=True, index=True)
+    owner_id = Column(BigInteger, ForeignKey('classic_identify.id'), nullable=True, server_default=None)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
 
     auth_tokens = relationship('AuthToken', back_populates='anonymous_identify')
+    owner = relationship('ClassicIdentify', back_populates='anonymous_identifies')
 
     @staticmethod
     def is_valid_ed25519_public_key(public_key: bytes) -> bool:
@@ -43,10 +47,13 @@ class ClassicIdentify(Base):
     user_name = Column(String(length=32), nullable=False, unique=True, index=True)
     password = Column(LargeBinary(length=64), nullable=False)
     salt = Column(LargeBinary(length=16), nullable=False)
+    permissions = Column(ARRAY(String), nullable=False, server_default='{}')
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
 
     auth_tokens = relationship('AuthToken', back_populates='classic_identify')
+    anonymous_identifies = relationship('AnonymousIdentify', back_populates='owner')
+    permission_groups = relationship('PermissionGroup', secondary=user_permission_group, back_populates='classic_identifies')
 
     @staticmethod
     def encrypt_password(password: bytes, salt: Optional[bytes] = None) -> (bytes, bytes):
