@@ -1,6 +1,7 @@
 import strawberry
 
-from hiccup.graphql.user import UserQuery, UserMutation, Context
+from hiccup.graphql.context import Context
+from hiccup.graphql.user import UserQuery, UserMutation
 from hiccup.graphql.system import SystemQuery
 
 

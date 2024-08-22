@@ -1,70 +1,16 @@
 from datetime import datetime, timedelta
-from enum import Enum
-from functools import cached_property
 from typing import Optional, Union, Annotated
 
 import sqlalchemy
 import strawberry
 from sqlalchemy import select
-from sqlalchemy.orm import joinedload
-from strawberry.fastapi import BaseContext
 from strawberry.permission import PermissionExtension
 
 from hiccup.cache import cache_nonce
-from hiccup.captcha import IsPassedCaptcha, HasPermission
 from hiccup.db import AsyncSessionLocal, check_ed25519_signature
 from hiccup.db.user import ClassicIdentify, AnonymousIdentify, AuthToken
-
-
-class Context(BaseContext):
-    async def user(self) -> Optional[Union['ClassicUser', 'AnonymousUser']]:
-        if not self.request:
-            return None
-
-        token = self.request.headers.get('X-Hiccup-Token', None)
-        if token is None:
-            return None
-
-        async with AsyncSessionLocal() as session:
-            db_token: Optional[AuthToken] = await session.scalar(select(AuthToken).options(joinedload(AuthToken.anonymous_identify), joinedload(AuthToken.classic_identify)).where(AuthToken.token == token).limit(1))
-            if db_token is None or db_token.is_expired:
-                return None
-
-            if db_token.anonymous_identify is not None:
-                anonymous: AnonymousIdentify = db_token.anonymous_identify
-                return AnonymousUser(id=anonymous.id, created_at=anonymous.created_at, updated_at=anonymous.updated_at, public_key=anonymous.public_key)
-
-            if db_token.classic_identify is not None:
-                classic: ClassicIdentify = db_token.classic_identify
-                return ClassicUser(id=classic.id, created_at=classic.created_at, updated_at=classic.updated_at, username=classic.user_name)
-
-        return None
-
-
-@strawberry.enum
-class UserType(str, Enum):
-    CLASSIC = "classic"
-    ANONYMOUS = "anonymous"
-
-
-@strawberry.interface
-class UserBase:
-    id: int
-    type: UserType
-    created_at: datetime
-    updated_at: datetime
-
-
-@strawberry.type
-class ClassicUser(UserBase):
-    type: UserType = UserType.CLASSIC
-    username: str
-
-
-@strawberry.type
-class AnonymousUser(UserBase):
-    type: UserType = UserType.ANONYMOUS
-    public_key: str
+from hiccup.graphql.context import Context
+from hiccup.graphql.permission import IsPassedCaptcha, IsAuthenticated, ClassicUser, AnonymousUser
 
 
 @strawberry.type
@@ -89,7 +35,7 @@ class UserQuery:
 
             raise ValueError(f"User {uid} not found")
 
-    @strawberry.field(description="Get self info", extensions=[PermissionExtension(permissions=[HasPermission("self::query")])])
+    @strawberry.field(description="Get self info", extensions=[PermissionExtension(permissions=[IsAuthenticated()])])
     async def self_info(self, info: strawberry.Info[Context]) -> Union[ClassicUser, AnonymousUser]:
         return await info.context.user()
 
@@ -144,20 +90,12 @@ class UserMutation:
                               timestamp: Annotated[int, strawberry.argument(description="Posix timestamp. The timestamp must within +-30s of server time")],
                               nonce: Annotated[str, strawberry.argument(description="A random string")],
                               signature: Annotated[str, strawberry.argument(description="Signature of utf-8(no-bom) encoded text 'login-{timestamp}-{nonce}' using private key")]) -> SessionToken:
-        if abs(datetime.fromtimestamp(timestamp) - datetime.now()) > timedelta(seconds=30):
-            raise ValueError("Invalid timestamp")
-        if len(nonce) > 64 or len(nonce) < 5:
-            raise ValueError("Nonce too long / too short")
-        if not AnonymousIdentify.is_valid_ed25519_public_key(bytes.fromhex(public_key)):
-            raise ValueError("Invalid public key")
 
         public_key_bytes = bytes.fromhex(public_key)
-
-        if not check_ed25519_signature(public_key=public_key_bytes, message=f'login-{timestamp}-{nonce}'.encode('utf-8'), signature=bytes.fromhex(signature)):
-            raise ValueError("Invalid signature")
+        verify_action_signature('login', public_key_bytes=public_key_bytes, timestamp=timestamp, nonce=nonce, signature=signature)
 
         async with AsyncSessionLocal() as session:
-            db_user: AnonymousIdentify = (await session.scalars(select(AnonymousIdentify).where(AnonymousIdentify.public_key == public_key_bytes).limit(1))).one_or_none()
+            db_user: AnonymousIdentify = await session.scalar(select(AnonymousIdentify).where(AnonymousIdentify.public_key == public_key_bytes).limit(1))
             if db_user is None:
                 raise ValueError(f"User with public key '{public_key}' not found")
 
@@ -168,3 +106,62 @@ class UserMutation:
             session.add(token)
             await session.commit()
             return SessionToken(token=token.token)
+
+    @strawberry.mutation(description="Binding anonymous identify to a classic identify. Auto register public key if anonymous doesn't exist.", permission_classes=[IsAuthenticated])
+    async def bind_anonymous_identify(
+        self,
+        public_key: Annotated[str, strawberry.argument(description="Ed25519 public key in hex")],
+        timestamp: Annotated[int, strawberry.argument(
+            description="Posix timestamp. The timestamp must within +-30s of server time")],
+        nonce: Annotated[str, strawberry.argument(description="A random string")],
+        signature: Annotated[str, strawberry.argument(
+            description="Signature of utf-8(no-bom) encoded text 'bind-to-{uid}-{timestamp}-{nonce}' using private key")],
+        info: strawberry.Info[Context]
+    ) -> bool:
+        user = await info.context.user()
+        if user:
+            public_key_bytes = bytes.fromhex(public_key)
+            verify_action_signature(f'bind-to-{user.id}', public_key_bytes=public_key_bytes, timestamp=timestamp, nonce=nonce, signature=signature)
+
+            async with AsyncSessionLocal() as session:
+                db_user: AnonymousIdentify = await session.scalar(select(AnonymousIdentify).where(AnonymousIdentify.public_key == public_key_bytes).limit(1))
+                if db_user is None:
+                    db_user = AnonymousIdentify(public_key=public_key_bytes)
+                    session.add(db_user)
+                    await session.commit()
+                    await session.refresh(db_user)
+
+                if not await cache_nonce(nonce):
+                    raise ValueError(f"Nonce '{nonce}' is already used, try another one.")
+
+                db_user.owner_id = user.id
+                session.add(db_user)
+                await session.commit()
+                return True
+
+        return False
+
+
+def verify_action_signature(
+    action: str,
+    *,
+    public_key_bytes: Annotated[bytes, strawberry.argument(description="Ed25519 public key in bytes")],
+    timestamp: Annotated[int, strawberry.argument(
+        description="Posix timestamp. The timestamp must within +-30s of server time")],
+    nonce: Annotated[str, strawberry.argument(description="A random string")],
+    signature: Annotated[str, strawberry.argument(
+        description="Signature of utf-8(no-bom) encoded text '{action}-{timestamp}-{nonce}' using private key")],
+) -> bool:
+    if abs(datetime.fromtimestamp(timestamp) - datetime.now()) > timedelta(seconds=30):
+        raise ValueError("Invalid timestamp")
+    if len(nonce) > 64 or len(nonce) < 5:
+        raise ValueError("Nonce too long / too short")
+    if not AnonymousIdentify.is_valid_ed25519_public_key(public_key_bytes):
+        raise ValueError("Invalid public key")
+
+    if not check_ed25519_signature(public_key=public_key_bytes, message=f'{action}-{timestamp}-{nonce}'.encode('utf-8'),
+                                   signature=bytes.fromhex(signature)):
+        raise ValueError("Invalid signature")
+
+    return True
+
