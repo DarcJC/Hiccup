@@ -23,5 +23,7 @@ class Settings(BaseSettings):
 
     session_valid_duration: Optional[int] = Field(86400)
 
+    permission_cache_ttl: Optional[int] = Field(600)
+
 
 SETTINGS = Settings()
