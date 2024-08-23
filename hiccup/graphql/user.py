@@ -3,7 +3,7 @@ from typing import Optional, Union, Annotated
 
 import sqlalchemy
 import strawberry
-from sqlalchemy import select
+from sqlalchemy import select, func
 from strawberry.permission import PermissionExtension
 
 from hiccup.cache import cache_nonce
@@ -140,6 +140,16 @@ class UserMutation:
                 return True
 
         return False
+
+    @strawberry.mutation(description="Create default administration")
+    async def create_default_admin(self, username: str, password: str) -> ClassicUser:
+        async with AsyncSessionLocal() as session:
+            stmt = select(func.count()).select_from(ClassicIdentify)
+            count = await session.scalar(stmt)
+            if count != 0:
+                raise ValueError(f"There is already have registered users")
+
+        return await self.register_classic(username, password)
 
 
 def verify_action_signature(
