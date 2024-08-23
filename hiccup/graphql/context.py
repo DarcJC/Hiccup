@@ -16,6 +16,10 @@ class Context(BaseContext):
             return None
 
         token = self.request.headers.get('X-Hiccup-Token', None)
+
+        if token is None:
+            token = (self.connection_params or dict()).get('X-Hiccup-Token', None)
+
         if token is None:
             return None
 
@@ -45,4 +49,10 @@ class Context(BaseContext):
 
     @cached_property
     def captcha_challenge_token(self) -> Optional[str]:
-        return self.request.headers.get('X-Hiccup-Captcha', None)
+        if 'X-Hiccup-Captcha' in self.request.headers:
+            return self.request.headers.get('X-Hiccup-Captcha', None)
+
+        if self.connection_params and 'X-Hiccup-Captcha' in self.connection_params:
+            return self.connection_params.get('X-Hiccup-Captcha', None)
+
+        return None
