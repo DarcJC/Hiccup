@@ -19,12 +19,12 @@ class _Prefix(str, enum.Enum):
 
 async def cache_nonce(nonce: str, expire_in: timedelta = timedelta(minutes=5)) -> bool:
     async with AsyncRedisSessionLocal() as session:
-        return await session.set(f'{_Prefix.Nonce}{nonce}', 1, ex=expire_in, nx=True)
+        return await session.set(f'{_Prefix.Nonce.value}{nonce}', 1, ex=expire_in, nx=True)
 
 
 async def invalidate_permission_cache(uid: int) -> None:
     async with AsyncRedisSessionLocal() as session:
-        await session.delete(f'{_Prefix.UserPermission}{uid}')
+        await session.delete(f'{_Prefix.UserPermission.value}{uid}')
 
 
 async def get_user_permission_no_cache(uid: int) -> Optional[set[str]]:
@@ -43,7 +43,7 @@ async def get_user_permission_no_cache(uid: int) -> Optional[set[str]]:
 
 
 async def get_user_permission_cached(uid: int) -> set[str]:
-    key = f'{_Prefix.UserPermission}{uid}'
+    key = f'{_Prefix.UserPermission.value}{uid}'
     async with AsyncRedisSessionLocal() as session:
         value: list[bytes] = await session.lrange(key, 0, -1)
         if len(value) > 0:
@@ -55,7 +55,7 @@ async def get_user_permission_cached(uid: int) -> set[str]:
             return set()
 
         await session.delete(key)
-        await session.lpushx(key, *value)
+        await session.lpush(key, *value)
         await session.expire(key, timedelta(seconds=SETTINGS.permission_cache_ttl))
 
     return value

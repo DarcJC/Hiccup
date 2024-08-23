@@ -1,8 +1,13 @@
 import strawberry
 
+from hiccup.db.permission import PermissionGroup
+from hiccup.graphql.base import generate_mutations
 from hiccup.graphql.context import Context
 from hiccup.graphql.user import UserQuery, UserMutation
 from hiccup.graphql.system import SystemQuery
+
+
+PermissionGroupMutation = generate_mutations(PermissionGroup)
 
 
 @strawberry.type
@@ -11,7 +16,7 @@ class Query(UserQuery, SystemQuery):
 
 
 @strawberry.type
-class Mutation(UserMutation):
+class Mutation(UserMutation, PermissionGroupMutation):
     pass
 
 

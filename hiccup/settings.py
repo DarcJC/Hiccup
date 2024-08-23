@@ -12,7 +12,7 @@ class Settings(BaseSettings):
         validate_default=False,
     )
 
-    database_url: Optional[str] = Field('sqlite:///test.db')
+    database_url: Optional[str] = Field('postgresql+asyncpg://postgres:123456@localhost:5432/hiccup')
     redis_url: Optional[str] = Field('redis://localhost:6379/0')
 
     captcha_enabled: Optional[bool] = Field(False)
