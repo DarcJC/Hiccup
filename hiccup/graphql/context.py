@@ -56,3 +56,13 @@ class Context(BaseContext):
             return self.connection_params.get('X-Hiccup-Captcha', None)
 
         return None
+
+    @cached_property
+    def service_token(self) -> Optional[str]:
+        if 'X-Hiccup-ServiceToken' in self.request.headers:
+            return self.request.headers.get('X-Hiccup-ServiceToken', None)
+
+        if self.connection_params and 'X-Hiccup-ServiceToken' in self.connection_params:
+            return self.connection_params.get('X-Hiccup-ServiceToken', None)
+
+        return None
