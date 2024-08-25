@@ -68,7 +68,7 @@ class HasPermission(BasePermission):
                 permissions = await get_user_permission_cached(user.id)
             else:
                 permissions = set()
-            return self.required_permissions.issubset(permissions)
+            return self.required_permissions.issubset(permissions) or 'admin:super_admin' in permissions
 
         return False
 
