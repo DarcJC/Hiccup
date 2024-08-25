@@ -50,7 +50,7 @@ class Settings(BaseSettings):
         return self.service_public_key_cryptography.public_bytes(
             encoding=serialization.Encoding.Raw,
             format=serialization.PublicFormat.Raw,
-        ).hex()
+        ).hex().upper()
 
 
 SETTINGS = Settings()
