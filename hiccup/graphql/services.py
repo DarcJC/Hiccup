@@ -27,13 +27,25 @@ class ServiceInfoType:
 
 
 @strawberry.type
-class ServiceMutation:
-    @strawberry.field(description="Register a service", permission_classes=[IsValidService])
-    async def register_service(self, service_id: str, service_info: ServiceInfoInputType) -> str:
-        await SERVICE_REGISTRY.register_service(service_id, service_info.to_pydantic())
-        return service_id
+class ServiceRegistryInfo:
+    public_key: str
 
-    @strawberry.field(description="Lookup services with tags", permission_classes=[IsValidService])
+
+@strawberry.type
+class ServiceQuery:
+    @strawberry.field(description="Service Registry Info")
+    async def service_registry_info(self) -> ServiceRegistryInfo:
+        return ServiceRegistryInfo(public_key=SETTINGS.service_public_key)
+
+
+@strawberry.type
+class ServiceMutation:
+    @strawberry.mutation(description="Register a service", permission_classes=[IsValidService])
+    async def register_service(self, service_id: str, service_info: ServiceInfoInputType) -> ServiceRegistryInfo:
+        await SERVICE_REGISTRY.register_service(service_id, service_info.to_pydantic())
+        return ServiceRegistryInfo(public_key=SETTINGS.service_public_key)
+
+    @strawberry.mutation(description="Lookup services with tags", permission_classes=[IsValidService])
     async def lookup_services(self,
                               tags: Annotated[Optional[list[str]], strawberry.argument(
                                   description="Required tags of services. If tags is null, will lookup in all services"
@@ -44,10 +56,10 @@ class ServiceMutation:
 
         return ServiceInfoType.from_pydantic(service_info)
 
-    @strawberry.field(description="Refresh service ttl", permission_classes=[IsValidService])
+    @strawberry.mutation(description="Refresh service ttl", permission_classes=[IsValidService])
     async def refresh_service(self, service_id: str) -> bool:
         return await SERVICE_REGISTRY.refresh_service(service_id)
 
-    @strawberry.field(description="Remove service", permission_classes=[IsValidService])
+    @strawberry.mutation(description="Remove service", permission_classes=[IsValidService])
     async def remove_service(self, service_id: str) -> bool:
         return await SERVICE_REGISTRY.remove_service(service_id)

@@ -70,7 +70,7 @@ class ServiceRegistry:
             service_info = await client.get(key)
             if service_info is None:
                 return False
-            service_info = ServiceInfo.model_validate_json()
+            service_info = ServiceInfo.model_validate_json(service_info)
             if service_info is not None:
                 await client.setex(key, timedelta(seconds=self.service_ttl), service_info.model_dump_json())
                 return True
