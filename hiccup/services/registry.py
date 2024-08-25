@@ -44,14 +44,14 @@ class ServiceRegistry:
     def service_ttl(self):
         return SETTINGS.service_registry_ttl
 
-    async def register_service(self, service_id: str, service_info: ServiceInfo):
-        key = f'{self._namespace}:{service_id}'
+    async def register_service(self, category: str, service_id: str, service_info: ServiceInfo):
+        key = f'{self._namespace}:{category}:{service_id}'
         async with self._redis_session() as client:
             await client.setex(key, timedelta(seconds=self.service_ttl), service_info.model_dump_json())
 
-    async def find_service(self, tags: Optional[set[str]] = None) -> Optional[ServiceInfo]:
+    async def find_service(self, category:str, tags: Optional[set[str]] = None) -> Optional[ServiceInfo]:
         async with self._redis_session() as client:
-            keys = await client.keys(f'{self._namespace}:*')
+            keys = await client.keys(f'{self._namespace}:{category}:*')
             services: list[(str, ServiceInfo)] = []
             for key in keys:
                 service_info = ServiceInfo.model_validate_json(await client.get(key))
@@ -64,8 +64,8 @@ class ServiceRegistry:
             _, selected_service = min(services, key=lambda x: x[1].load_factor)
             return selected_service
 
-    async def refresh_service(self, service_id: str) -> bool:
-        key = f'{self._namespace}:{service_id}'
+    async def refresh_service(self, category: str, service_id: str) -> bool:
+        key = f'{self._namespace}:{category}:{service_id}'
         async with self._redis_session() as client:
             service_info = await client.get(key)
             if service_info is None:
@@ -76,8 +76,8 @@ class ServiceRegistry:
                 return True
         return False
 
-    async def remove_service(self, service_id: str) -> bool:
-        key = f'{self._namespace}:{service_id}'
+    async def remove_service(self, category: str, service_id: str) -> bool:
+        key = f'{self._namespace}:{category}:{service_id}'
         async with self._redis_session() as client:
             return await client.delete(key)
 
