@@ -2,6 +2,7 @@ import strawberry
 
 from hiccup.db.permission import PermissionGroup
 from hiccup.graphql.base import generate_mutations
+from hiccup.graphql.channel import ChannelMutation
 from hiccup.graphql.context import Context
 from hiccup.graphql.services import ServiceMutation, ServiceQuery
 from hiccup.graphql.user import UserQuery, UserMutation
@@ -25,6 +26,7 @@ class Mutation(
     UserMutation,
     PermissionGroupMutation,
     ServiceMutation,
+    ChannelMutation,
 ):
     pass
 

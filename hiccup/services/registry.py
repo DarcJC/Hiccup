@@ -1,4 +1,8 @@
+import abc
+import enum
+import json
 from datetime import timedelta
+from functools import cached_property
 from typing import Optional
 
 import redis.asyncio as redis
@@ -10,8 +14,32 @@ from hiccup import SETTINGS
 class ServiceInfo(BaseModel):
     tags: list[str]
     ip: str
+    hostname: Optional[str] = None
     port: int
     load_factor: float
+
+    @cached_property
+    def domain_or_ip(self):
+        if self.host is None:
+            return self.ip
+        return self.hostname
+
+
+class ServiceHealthType(str, enum.Enum):
+    Healthy = "healthy"
+    Unstable = "unstable"
+    Unavailable = "unavailable"
+
+
+class ServiceController(abc.ABC):
+    info: ServiceInfo
+
+    def __init__(self, service_info: ServiceInfo):
+        self.info = service_info
+
+    @abc.abstractmethod
+    async def check_health(self) -> ServiceHealthType:
+        pass
 
 
 class ServiceRegistry:
@@ -80,6 +108,19 @@ class ServiceRegistry:
         key = f'{self._namespace}:{category}:{service_id}'
         async with self._redis_session() as client:
             return await client.delete(key)
+
+    async def set_service_metadata(self, category: str, name: str, metadata: dict, ex: timedelta = None):
+        key = f'{self._namespace}:{category}:metadata:{name}'
+        async with self._redis_session() as client:
+            await client.set(key, json.dumps(metadata), ex=ex)
+
+    async def get_service_metadata(self, category: str, name: str) -> Optional[dict]:
+        key = f'{self._namespace}:{category}:metadata:{name}'
+        async with self._redis_session() as client:
+            res = await client.get(key)
+            if res is not None:
+                return json.loads(res)
+        return None
 
 
 SERVICE_REGISTRY = ServiceRegistry()

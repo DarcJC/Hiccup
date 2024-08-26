@@ -2,7 +2,7 @@ import re
 from typing import Type, Optional, Any
 
 import strawberry
-from sqlalchemy import select, Column, ARRAY, VARCHAR, BOOLEAN, String
+from sqlalchemy import select, Column, ARRAY, VARCHAR, BOOLEAN, String, JSON
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.sql.type_api import TypeEngine
 from strawberry.annotation import StrawberryAnnotation
@@ -10,6 +10,7 @@ from strawberry.permission import PermissionExtension
 from strawberry.tools import create_type
 from strawberry.types.base import StrawberryType
 from strawberry.types.field import StrawberryField
+from strawberry import scalars
 
 from hiccup.db import AsyncSessionLocal
 from hiccup.graphql.permission import HasPermission
@@ -30,6 +31,8 @@ def map_sqlalchemy_column_type(column: Column) -> object:
     result = sql_type.python_type
     if isinstance(sql_type, ARRAY):
         result = list[map_sqlalchemy_engine_type(sql_type.item_type)]
+    elif isinstance(sql_type, JSON):
+        result = scalars.JSON
 
     if column.name == 'id':
         result = Optional[result]
@@ -62,11 +65,9 @@ def generate_mutations(model: Type[DeclarativeBase], exclude_fields: Optional[li
 
     graphql_type, input_type = generate_graphql_types(model, exclude_fields)
 
-    @strawberry.type
-    class Mutation:
-        @strawberry.mutation(description=f"Create {model.__name__}",
-                             extensions=[PermissionExtension(permissions=[HasPermission(*required_permissions)])],
-                             name=to_camel_case(f"create_{model.__name__}"))
+    def create_mutation_class():
+        mutations: dict[str, any] = {}
+
         async def create_item(self, data: input_type) -> graphql_type:
             async with AsyncSessionLocal() as session:
                 item = model(**data.__dict__)
@@ -75,9 +76,10 @@ def generate_mutations(model: Type[DeclarativeBase], exclude_fields: Optional[li
                 await session.refresh(item)
                 return item
 
-        @strawberry.mutation(description=f"Update {model.__name__}. Create if not exist.",
+        mutations["create_item"] = strawberry.mutation(create_item, description=f"Create {model.__name__}",
                              extensions=[PermissionExtension(permissions=[HasPermission(*required_permissions)])],
-                             name=to_camel_case(f"update_{model.__name__}"))
+                             name=to_camel_case(f"create_{model.__name__}"))
+
         async def update_item(self, item_id: int, data: input_type) -> graphql_type:
             async with AsyncSessionLocal() as session:
                 item = await session.scalar(select(model).where(model.id == item_id).limit(1))
@@ -91,9 +93,10 @@ def generate_mutations(model: Type[DeclarativeBase], exclude_fields: Optional[li
                 await session.refresh(item)
                 return item
 
-        @strawberry.mutation(description=f"Delete {model.__name__}.",
+        mutations["update_item"] = strawberry.mutation(update_item, description=f"Update {model.__name__}. Create if not exist.",
                              extensions=[PermissionExtension(permissions=[HasPermission(*required_permissions)])],
-                             name=to_camel_case(f"delete_{model.__name__}"))
+                             name=to_camel_case(f"update_{model.__name__}"))
+
         async def delete_item(self, item_id: int) -> graphql_type:
             async with AsyncSessionLocal() as session:
                 item = await session.scalar(select(model).where(model.id == item_id).limit(1))
@@ -103,7 +106,13 @@ def generate_mutations(model: Type[DeclarativeBase], exclude_fields: Optional[li
                     return True
                 return False
 
-    return Mutation
+        mutations["delete_item"] = strawberry.mutation(delete_item, description=f"Delete {model.__name__}.",
+                             extensions=[PermissionExtension(permissions=[HasPermission(*required_permissions)])],
+                             name=to_camel_case(f"delete_{model.__name__}"))
+
+        return create_type(name=f"{model.__name__}Mutation", fields=list(mutations.values()), description=f"Auto generated cud mutation for {model.__name__}")
+
+    return create_mutation_class()
 
 
 def to_camel_case(s: str) -> str:
