@@ -10,8 +10,8 @@ from hiccup.cache import cache_nonce
 from hiccup.db import AsyncSessionLocal, check_ed25519_signature
 from hiccup.db.user import ClassicIdentify, AnonymousIdentify, AuthToken
 from hiccup.graphql.base import obfuscated_id
-from hiccup.graphql.context import Context
-from hiccup.graphql.permission import IsPassedCaptcha, IsAuthenticated, ClassicUser, AnonymousUser
+from hiccup.graphql.base import Context
+from hiccup.graphql.base import IsPassedCaptcha, IsAuthenticated, ClassicUser, AnonymousUser
 
 
 @strawberry.type

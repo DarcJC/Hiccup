@@ -3,7 +3,7 @@ from typing import Any, Optional, Annotated
 import strawberry
 
 from hiccup import SETTINGS
-from hiccup.graphql.context import Context
+from hiccup.graphql.base import Context
 from hiccup.services import ServiceInfo, SERVICE_REGISTRY
 
 

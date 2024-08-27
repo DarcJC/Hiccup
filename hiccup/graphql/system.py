@@ -4,7 +4,7 @@ import strawberry
 from strawberry.permission import PermissionExtension
 
 from hiccup import SETTINGS
-from hiccup.graphql.permission import HasPermission
+from hiccup.graphql.base import HasPermission
 
 
 @strawberry.type

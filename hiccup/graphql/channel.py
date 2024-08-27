@@ -1,6 +1,6 @@
 import strawberry
 
-from hiccup.graphql.permission import IsAuthenticated
+from hiccup.graphql.base import IsAuthenticated
 from hiccup.graphql.services import IsValidService
 from hiccup.services import get_media_controller
 from hiccup.graphql.base import obfuscated_id

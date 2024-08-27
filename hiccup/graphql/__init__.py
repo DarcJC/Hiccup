@@ -4,7 +4,7 @@ from hiccup.db.permission import PermissionGroup
 from hiccup.db.server import Channel
 from hiccup.graphql.base import generate_multiple_mutations
 from hiccup.graphql.channel import ChannelMutation
-from hiccup.graphql.context import Context
+from hiccup.graphql.base import Context
 from hiccup.graphql.services import ServiceMutation, ServiceQuery
 from hiccup.graphql.user import UserQuery, UserMutation
 from hiccup.graphql.system import SystemQuery
