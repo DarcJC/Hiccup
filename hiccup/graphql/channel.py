@@ -1,4 +1,6 @@
 import strawberry
+import strawberry.scalars
+from pydantic import BaseModel
 
 from hiccup.graphql.base import IsAuthenticated
 from hiccup.graphql.services import IsValidService
@@ -6,11 +8,21 @@ from hiccup.services import get_media_controller
 from hiccup.graphql.base import obfuscated_id
 
 
+class MediaToken(BaseModel):
+    room_id: str
+    max_incoming_bitrate: int
+
+
+@strawberry.experimental.pydantic.type(model=MediaToken, all_fields=True)
+class MediaTokenType:
+    pass
+
+
 @strawberry.type
 class MediaSignalServerConnectionInfo:
     hostname: str
     port: int
-    token: str
+    token: strawberry.scalars.JSON
 
 
 @strawberry.type
@@ -26,7 +38,7 @@ class ChannelMutation:
         return MediaSignalServerConnectionInfo(
             hostname=allocated_service.hostname,
             port=allocated_service.port,
-            token="NO",
+            token={},
         )
 
     @strawberry.field(

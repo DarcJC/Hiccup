@@ -63,8 +63,7 @@ class Settings(BaseSettings):
 
     @cached_property
     def service_private_key_cryptography(self) -> ed25519.Ed25519PrivateKey:
-        private_key_bytes = bytes.fromhex(self.service_private_key)
-        private_key = ed25519.Ed25519PrivateKey.from_private_bytes(private_key_bytes)
+        private_key = ed25519.Ed25519PrivateKey.from_private_bytes(self.private_key_bytes)
         return private_key
 
     @cached_property
@@ -77,6 +76,10 @@ class Settings(BaseSettings):
             encoding=serialization.Encoding.Raw,
             format=serialization.PublicFormat.Raw,
         ).hex().upper()
+
+    @cached_property
+    def private_key_bytes(self) -> bytes:
+        return bytes.fromhex(self.service_private_key)
 
     def encrypt_id(self, id_value: int) -> str:
         mixed_num = ((id_value * self.id_obf_secret_a) ^ self.id_obf_secret_key) % self.id_obf_module_number
