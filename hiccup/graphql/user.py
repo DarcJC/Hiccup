@@ -9,6 +9,7 @@ from strawberry.permission import PermissionExtension
 from hiccup.cache import cache_nonce
 from hiccup.db import AsyncSessionLocal, check_ed25519_signature
 from hiccup.db.user import ClassicIdentify, AnonymousIdentify, AuthToken
+from hiccup.graphql.base import obfuscated_id
 from hiccup.graphql.context import Context
 from hiccup.graphql.permission import IsPassedCaptcha, IsAuthenticated, ClassicUser, AnonymousUser
 
@@ -20,8 +21,11 @@ class SessionToken:
 
 @strawberry.type
 class UserQuery:
-    @strawberry.field(description="Get user info by id")
-    async def user_info(self, uid: Annotated[int, strawberry.argument(
+    @strawberry.field(
+        description="Get user info by id",
+        permission_classes=[IsAuthenticated],
+    )
+    async def user_info(self, uid: Annotated[obfuscated_id, strawberry.argument(
         description="User id"
     )]) -> Union[ClassicUser, AnonymousUser]:
         async with AsyncSessionLocal() as session:

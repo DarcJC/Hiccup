@@ -94,14 +94,17 @@ class ServiceRegistry:
     def service_ttl(self):
         return SETTINGS.service_registry_ttl
 
+    def get_key(self, category: str, key: str) -> str:
+        return f"{self._namespace}:{category}::{key}"
+
     async def register_service(self, category: str, service_id: str, service_info: ServiceInfo):
-        key = f'{self._namespace}:{category}:{service_id}'
+        key = self.get_key(category, service_id)
         async with self._redis_session() as client:
             await client.setex(key, timedelta(seconds=self.service_ttl), service_info.model_dump_json())
 
     async def find_service(self, category:str, tags: Optional[set[str]] = None) -> Optional[ServiceInfo]:
         async with self._redis_session() as client:
-            keys = await client.keys(f'{self._namespace}:{category}:*')
+            keys = await client.keys(f'{self._namespace}:{category}::*')
             services: list[(str, ServiceInfo)] = []
             for key in keys:
                 service_info = ServiceInfo.model_validate_json(await client.get(key))
@@ -115,7 +118,7 @@ class ServiceRegistry:
             return selected_service
 
     async def refresh_service(self, category: str, service_id: str) -> bool:
-        key = f'{self._namespace}:{category}:{service_id}'
+        key = self.get_key(category, service_id)
         async with self._redis_session() as client:
             service_info = await client.get(key)
             if service_info is None:
@@ -127,12 +130,12 @@ class ServiceRegistry:
         return False
 
     async def remove_service(self, category: str, service_id: str) -> bool:
-        key = f'{self._namespace}:{category}:{service_id}'
+        key = self.get_key(category, service_id)
         async with self._redis_session() as client:
             return await client.delete(key)
 
     async def set_service_metadata(self, category: str, name: str, metadata: dict, ex: timedelta = None, lock: bool = False):
-        key = f'{self._namespace}:{category}:metadata:{name}'
+        key = self.get_key(category, f'metadata::{name}')
         lock_key = f'lock::{key}'
         async with self._redis_session() as client:
             async def action():
@@ -144,7 +147,7 @@ class ServiceRegistry:
                 return await action()
 
     async def get_service_metadata(self, category: str, name: str, lock: bool = False) -> Optional[dict]:
-        key = f'{self._namespace}:{category}:metadata:{name}'
+        key = self.get_key(category, f'metadata::{name}')
         lock_key = f'lock::{key}'
         async with self._redis_session() as client:
             async def action():
@@ -159,6 +162,17 @@ class ServiceRegistry:
             else:
                 return await action()
 
+    async def delete_service_metadata(self, category: str, name: str, lock: bool = False) -> bool:
+        key = self.get_key(category, f'metadata::{name}')
+        lock_key = f'lock::{key}'
+        async with self._redis_session() as client:
+            async def action():
+                return await client.delete(key)
+            if lock:
+                async with self._redis_lock(client, lock_key, 1.0):
+                    return await action()
+            else:
+                return await action()
 
 
 SERVICE_REGISTRY = ServiceRegistry()

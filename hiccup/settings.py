@@ -1,5 +1,6 @@
+import string
 from functools import cached_property
-from typing import Optional, Annotated
+from typing import Optional
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -9,6 +10,24 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from cryptography.hazmat.primitives.asymmetric import ed25519
 from cryptography.hazmat.primitives import serialization
+
+
+def base62_encode(num):
+    characters = string.digits + string.ascii_letters
+    base = len(characters)
+    result = []
+    while num:
+        num, rem = divmod(num, base)
+        result.append(characters[rem])
+    return ''.join(reversed(result)) or '0'
+
+def base62_decode(s):
+    characters = string.digits + string.ascii_letters
+    base = len(characters)
+    num = 0
+    for char in s:
+        num = num * base + characters.index(char)
+    return num
 
 
 class Settings(BaseSettings):
@@ -38,6 +57,10 @@ class Settings(BaseSettings):
     graphql_parser_cache_size: int = Field(128, ge=8)
     graphql_max_query_depth: int = Field(10, ge=5, le=128)
 
+    id_obf_module_number: int = Field(2**32, ge=2**16)
+    id_obf_secret_key: int = Field(24542592794035)
+    id_obf_secret_a: int = Field(2333)
+
     @cached_property
     def service_private_key_cryptography(self) -> ed25519.Ed25519PrivateKey:
         private_key_bytes = bytes.fromhex(self.service_private_key)
@@ -54,6 +77,15 @@ class Settings(BaseSettings):
             encoding=serialization.Encoding.Raw,
             format=serialization.PublicFormat.Raw,
         ).hex().upper()
+
+    def encrypt_id(self, id_value: int) -> str:
+        mixed_num = ((id_value * self.id_obf_secret_a) ^ self.id_obf_secret_key) % self.id_obf_module_number
+        return base62_encode(mixed_num)
+
+    def decrypt_id(self, encrypted_id: str) -> int:
+        mixed_num = base62_decode(encrypted_id)
+        original_num = (mixed_num ^ self.id_obf_secret_key) * pow(self.id_obf_secret_a, -1, self.id_obf_module_number) % self.id_obf_module_number
+        return original_num
 
 
 SETTINGS = Settings()

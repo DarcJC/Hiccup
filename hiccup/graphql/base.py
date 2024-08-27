@@ -1,19 +1,26 @@
 import re
-from typing import Type, Optional, Any
+from datetime import datetime
+from enum import Enum
+from functools import cached_property
+from typing import Type, Optional, Any, NewType, Union
 
 import strawberry
 from sqlalchemy import select, Column, ARRAY, VARCHAR, BOOLEAN, String, JSON
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import DeclarativeBase, joinedload
 from sqlalchemy.sql.type_api import TypeEngine
 from strawberry.annotation import StrawberryAnnotation
-from strawberry.permission import PermissionExtension
+from strawberry.fastapi import BaseContext
+from strawberry.permission import PermissionExtension, BasePermission
 from strawberry.tools import create_type
 from strawberry.types.field import StrawberryField
 from strawberry.tools import merge_types
-from strawberry import scalars
+from strawberry import scalars, Info
 
+from hiccup import SETTINGS
+from hiccup.cache import get_user_permission_cached
+from hiccup.captcha import Turnstile
 from hiccup.db import AsyncSessionLocal
-from hiccup.graphql.permission import HasPermission
+from hiccup.db.user import AuthToken, AnonymousIdentify, ClassicIdentify
 
 
 def map_sqlalchemy_engine_type(t: Type[TypeEngine]):
@@ -64,7 +71,7 @@ def generate_mutations(
         exclude_fields: Optional[list[str]] = None,
         required_permissions: Optional[list[str]] = None
 ) -> strawberry.type:
-    required_permissions = required_permissions or ["admin::admin"]
+    required_permissions = required_permissions or ["admin::super_admin"]
 
     graphql_type, input_type = generate_graphql_types(model, exclude_fields)
 
@@ -134,7 +141,7 @@ def generate_queries(
         exclude_fields: Optional[list[str]] = None,
         required_permission: Optional[list[str]] = None,
 ) -> strawberry.type:
-    required_permissions = required_permission or ["admin::admin"]
+    required_permissions = required_permission or ["admin::super_admin"]
 
     graphql_type, input_type = generate_graphql_types(model, exclude_fields)
 
@@ -168,3 +175,151 @@ def generate_multiple_queries(
 def to_camel_case(s: str) -> str:
     words = re.split(r'[\s_-]+', s)
     return words[0].lower() + ''.join(word.capitalize() for word in words[1:])
+
+
+class ObfuscatedID:
+    @staticmethod
+    def serialize(value: int) -> str:
+        return SETTINGS.encrypt_id(value)
+
+    @staticmethod
+    def parse_value(value: str) -> int:
+        return SETTINGS.decrypt_id(value)
+
+
+obfuscated_id = strawberry.scalar(
+    NewType("ObfuscatedID", str),
+    name="obfuscatedId",
+    description="Obfuscated ID",
+    serialize=ObfuscatedID.serialize,
+    parse_value=ObfuscatedID.parse_value,
+)
+
+
+class Context(BaseContext):
+    async def user(self) -> Optional[Union['ClassicUser', 'AnonymousUser']]:
+        if not self.request:
+            return None
+
+        token = self.request.headers.get('X-Hiccup-Token', None)
+
+        if token is None:
+            token = (self.connection_params or dict()).get('X-Hiccup-Token', None)
+
+        if token is None:
+            return None
+
+        async with AsyncSessionLocal() as session:
+            db_token: Optional[AuthToken] = await session.scalar(
+                select(AuthToken)
+                .options(
+                    joinedload(AuthToken.anonymous_identify)
+                    .options(joinedload(AnonymousIdentify.owner)),
+                    joinedload(AuthToken.classic_identify))
+                .where(AuthToken.token == token).limit(1))
+            if db_token is None or db_token.is_expired:
+                return None
+
+            if db_token.anonymous_identify is not None:
+                anonymous: AnonymousIdentify = db_token.anonymous_identify
+                if anonymous.owner is None:
+                    return AnonymousUser(id=anonymous.id, created_at=anonymous.created_at, updated_at=anonymous.updated_at, public_key=anonymous.public_key)
+                classic: ClassicIdentify = anonymous.owner
+                return ClassicUser(id=classic.id, created_at=classic.created_at, updated_at=classic.updated_at, username=classic.user_name)
+
+            if db_token.classic_identify is not None:
+                classic: ClassicIdentify = db_token.classic_identify
+                return ClassicUser(id=classic.id, created_at=classic.created_at, updated_at=classic.updated_at, username=classic.user_name)
+
+        return None
+
+    @cached_property
+    def captcha_challenge_token(self) -> Optional[str]:
+        if 'X-Hiccup-Captcha' in self.request.headers:
+            return self.request.headers.get('X-Hiccup-Captcha', None)
+
+        if self.connection_params and 'X-Hiccup-Captcha' in self.connection_params:
+            return self.connection_params.get('X-Hiccup-Captcha', None)
+
+        return None
+
+    @cached_property
+    def service_token(self) -> Optional[str]:
+        if 'X-Hiccup-ServiceToken' in self.request.headers:
+            return self.request.headers.get('X-Hiccup-ServiceToken', None)
+
+        if self.connection_params and 'X-Hiccup-ServiceToken' in self.connection_params:
+            return self.connection_params.get('X-Hiccup-ServiceToken', None)
+
+        return None
+
+@strawberry.enum
+class UserType(str, Enum):
+    CLASSIC = "classic"
+    ANONYMOUS = "anonymous"
+
+
+@strawberry.interface
+class UserBase:
+    id: obfuscated_id
+    type: UserType
+    created_at: datetime
+    updated_at: datetime
+
+
+@strawberry.type
+class ClassicUser(UserBase):
+    type: UserType = UserType.CLASSIC
+    username: str
+
+
+@strawberry.type
+class AnonymousUser(UserBase):
+    type: UserType = UserType.ANONYMOUS
+    public_key: str
+
+
+class IsPassedCaptcha(BasePermission):
+    message = "User must finish captcha challenge"
+
+    async def has_permission(
+            self, source: Any, info: Info[Context], **kwargs: Any
+    ) -> bool:
+        if not SETTINGS.captcha_enabled:
+            return True
+
+        if info.context.captcha_challenge_token is not None:
+            return await Turnstile(secret_key=SETTINGS.captcha_turnstile_secret).verify(info.context.captcha_challenge_token)
+
+        return False
+
+
+class HasPermission(BasePermission):
+    message = "Access denied"
+
+    def __init__(self, *required_permissions: str):
+        super().__init__()
+        self.required_permissions = set(required_permissions)
+
+    async def has_permission(
+            self, source: Any, info: Info[Context], **kwargs: Any
+    ) -> bool:
+        user: Optional[Union['ClassicUser', 'AnonymousUser']] = await info.context.user()
+
+        if user is not None:
+            if isinstance(user, ClassicUser):
+                permissions = await get_user_permission_cached(user.id)
+            else:
+                permissions = set()
+            return self.required_permissions.issubset(permissions) or 'admin::super_admin' in permissions
+
+        return False
+
+
+class IsAuthenticated(BasePermission):
+    message = "Authentication required"
+
+    async def has_permission(
+            self, source: Any, info: Info[Context], **kwargs: Any
+    ) -> bool:
+        return (await info.context.user()) is not None
