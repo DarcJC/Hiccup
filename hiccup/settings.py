@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     service_registry_ttl: int = Field(60, ge=10, le=600)
     service_private_key: str = Field(min_length=32)
 
+    graphql_parser_cache_size: int = Field(128, ge=8)
+    graphql_max_query_depth: int = Field(10, ge=5, le=128)
+
     @cached_property
     def service_private_key_cryptography(self) -> ed25519.Ed25519PrivateKey:
         private_key_bytes = bytes.fromhex(self.service_private_key)

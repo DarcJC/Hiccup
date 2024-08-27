@@ -60,7 +60,7 @@ def generate_graphql_types(model: Type[DeclarativeBase], exclude_fields: Optiona
 
 
 def generate_mutations(model: Type[DeclarativeBase], exclude_fields: Optional[list[str]] = None,
-                       required_permissions=None) -> StrawberryType:
+                       required_permissions=None) -> strawberry.type:
     required_permissions = required_permissions or ["admin::admin"]
 
     graphql_type, input_type = generate_graphql_types(model, exclude_fields)
@@ -68,7 +68,7 @@ def generate_mutations(model: Type[DeclarativeBase], exclude_fields: Optional[li
     def create_mutation_class():
         mutations: dict[str, any] = {}
 
-        async def create_item(self, data: input_type) -> graphql_type:
+        async def create_item(data: input_type) -> graphql_type:
             async with AsyncSessionLocal() as session:
                 item = model(**data.__dict__)
                 session.add(item)
@@ -76,11 +76,12 @@ def generate_mutations(model: Type[DeclarativeBase], exclude_fields: Optional[li
                 await session.refresh(item)
                 return item
 
-        mutations["create_item"] = strawberry.mutation(create_item, description=f"Create {model.__name__}",
+        setattr(create_item, "__name__", to_camel_case(f"create_{model.__name__}"))
+        mutations[to_camel_case(f"create_{model.__name__}")] = strawberry.mutation(create_item, description=f"Create {model.__name__}",
                              extensions=[PermissionExtension(permissions=[HasPermission(*required_permissions)])],
                              name=to_camel_case(f"create_{model.__name__}"))
 
-        async def update_item(self, item_id: int, data: input_type) -> graphql_type:
+        async def update_item(item_id: int, data: input_type) -> graphql_type:
             async with AsyncSessionLocal() as session:
                 item = await session.scalar(select(model).where(model.id == item_id).limit(1))
                 if item:
@@ -93,11 +94,12 @@ def generate_mutations(model: Type[DeclarativeBase], exclude_fields: Optional[li
                 await session.refresh(item)
                 return item
 
-        mutations["update_item"] = strawberry.mutation(update_item, description=f"Update {model.__name__}. Create if not exist.",
+        setattr(update_item, "__name__", to_camel_case(f"update_{model.__name__}"))
+        mutations[to_camel_case(f"update_{model.__name__}")] = strawberry.mutation(update_item, description=f"Update {model.__name__}. Create if not exist.",
                              extensions=[PermissionExtension(permissions=[HasPermission(*required_permissions)])],
                              name=to_camel_case(f"update_{model.__name__}"))
 
-        async def delete_item(self, item_id: int) -> graphql_type:
+        async def delete_item(item_id: int) -> graphql_type:
             async with AsyncSessionLocal() as session:
                 item = await session.scalar(select(model).where(model.id == item_id).limit(1))
                 if item:
@@ -106,7 +108,8 @@ def generate_mutations(model: Type[DeclarativeBase], exclude_fields: Optional[li
                     return True
                 return False
 
-        mutations["delete_item"] = strawberry.mutation(delete_item, description=f"Delete {model.__name__}.",
+        setattr(delete_item, "__name__", to_camel_case(f"delete_{model.__name__}"))
+        mutations[f"delete_{model.__name__}"] = strawberry.mutation(delete_item, description=f"Delete {model.__name__}.",
                              extensions=[PermissionExtension(permissions=[HasPermission(*required_permissions)])],
                              name=to_camel_case(f"delete_{model.__name__}"))
 
