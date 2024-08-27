@@ -1,6 +1,6 @@
 import aiohttp
 
-from hiccup.services import ServiceInfo
+from hiccup.services import ServiceInfo, SERVICE_REGISTRY
 from hiccup.services.registry import ServiceController, ServiceHealthType
 
 

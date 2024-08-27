@@ -6,6 +6,7 @@ from functools import cached_property
 from typing import Optional
 
 import redis.asyncio as redis
+import redis.asyncio.lock as redis_lock
 from pydantic import BaseModel
 
 from hiccup import SETTINGS
@@ -66,7 +67,28 @@ class ServiceRegistry:
             async def __aexit__(self, exc_type, exc_val, exc_tb):
                 await self.client.close()
                 self.client = None
+                return True
+
         return Session(pool=self.pool)
+
+    def _redis_lock(self, client: redis.Redis, lock_key: str, timeout: Optional[float] = None):
+        class LockManager:
+            _client: redis.Redis
+            lock: redis_lock.Lock
+
+            def __init__(self, _client: redis.Redis, _lock_key: str, _timeout: Optional[float] = None):
+                self._client = _client
+                self.lock = self._client.lock(name=_lock_key, timeout=_timeout)
+
+            async def __aenter__(self):
+                await self.lock.acquire()
+                return None
+
+            async def __aexit__(self, exc_type, exc_val, exc_tb):
+                await self.lock.release()
+                return True
+
+        return LockManager(_client=client, _lock_key=lock_key, _timeout=timeout)
 
     @property
     def service_ttl(self):
@@ -109,18 +131,34 @@ class ServiceRegistry:
         async with self._redis_session() as client:
             return await client.delete(key)
 
-    async def set_service_metadata(self, category: str, name: str, metadata: dict, ex: timedelta = None):
+    async def set_service_metadata(self, category: str, name: str, metadata: dict, ex: timedelta = None, lock: bool = False):
         key = f'{self._namespace}:{category}:metadata:{name}'
+        lock_key = f'lock::{key}'
         async with self._redis_session() as client:
-            await client.set(key, json.dumps(metadata), ex=ex)
+            async def action():
+                return await client.set(key, json.dumps(metadata), ex=ex)
+            if lock:
+                async with self._redis_lock(client, lock_key, 1.0):
+                    return await action()
+            else:
+                return await action()
 
-    async def get_service_metadata(self, category: str, name: str) -> Optional[dict]:
+    async def get_service_metadata(self, category: str, name: str, lock: bool = False) -> Optional[dict]:
         key = f'{self._namespace}:{category}:metadata:{name}'
+        lock_key = f'lock::{key}'
         async with self._redis_session() as client:
-            res = await client.get(key)
-            if res is not None:
-                return json.loads(res)
-        return None
+            async def action():
+                res = await client.get(key)
+                if res is not None:
+                    return json.loads(res)
+                return None
+
+            if lock:
+                async with self._redis_lock(client, lock_key, 1.0):
+                    return await action()
+            else:
+                return await action()
+
 
 
 SERVICE_REGISTRY = ServiceRegistry()
