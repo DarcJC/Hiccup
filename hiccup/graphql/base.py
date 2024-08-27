@@ -16,6 +16,8 @@ from strawberry.types.field import StrawberryField
 from strawberry.tools import merge_types
 from strawberry import scalars, Info
 
+from authlib.jose import JsonWebToken
+
 from hiccup import SETTINGS
 from hiccup.cache import get_user_permission_cached
 from hiccup.captcha import Turnstile
@@ -323,3 +325,13 @@ class IsAuthenticated(BasePermission):
             self, source: Any, info: Info[Context], **kwargs: Any
     ) -> bool:
         return (await info.context.user()) is not None
+
+
+jwt = JsonWebToken(algorithms=['EdDSA'])
+
+
+def create_jwt(payload: dict) -> str:
+    header = {'alg': 'EdDSA'}
+    payload.setdefault('iss', 'Hiccup')
+    private_key = SETTINGS.service_private_key_cryptography
+    return jwt.encode(header=header, payload=payload, key=private_key).decode('utf-8')
