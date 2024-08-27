@@ -1,9 +1,12 @@
+import logging
+
 import strawberry
 from fastapi import FastAPI
 from strawberry.fastapi import GraphQLRouter
 from strawberry.schema.config import StrawberryConfig
 from strawberry.subscriptions import GRAPHQL_TRANSPORT_WS_PROTOCOL, GRAPHQL_WS_PROTOCOL
 from strawberry.extensions import ParserCache, QueryDepthLimiter
+from strawberry.utils.logging import StrawberryLogger
 
 from hiccup import SETTINGS
 from hiccup.graphql import Query, Mutation, get_context
@@ -20,6 +23,8 @@ schema = strawberry.Schema(
         QueryDepthLimiter(max_depth=SETTINGS.graphql_max_query_depth),
     ],
 )
+StrawberryLogger.logger.setLevel(logging.INFO if SETTINGS.debug_enabled else logging.CRITICAL)
+
 graphql_app = GraphQLRouter(
     schema,
     debug=SETTINGS.debug_enabled,
