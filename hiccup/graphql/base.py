@@ -157,6 +157,14 @@ def generate_queries(
     )])
 
 
+def generate_multiple_queries(
+        name: str = "GeneratedMutations",
+        *models: tuple[ Type[DeclarativeBase], Optional[list[str]], Optional[list[str]] ],
+) -> strawberry.type:
+    created_types = tuple([ generate_queries(*models) for model in models ])
+    return merge_types(name, created_types)
+
+
 def to_camel_case(s: str) -> str:
     words = re.split(r'[\s_-]+', s)
     return words[0].lower() + ''.join(word.capitalize() for word in words[1:])
