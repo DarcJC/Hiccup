@@ -1,4 +1,7 @@
 import re
+import string
+import time
+import random
 from datetime import datetime
 from enum import Enum
 from functools import cached_property
@@ -333,5 +336,7 @@ jwt = JsonWebToken(algorithms=['EdDSA'])
 def create_jwt(payload: dict) -> str:
     header = {'alg': 'EdDSA'}
     payload.setdefault('iss', 'Hiccup')
+    payload.setdefault('timestamp', int(time.time()))
+    payload.setdefault('nonce', ''.join(random.SystemRandom().choice(string.ascii_letters + string.digits + string.punctuation) for _ in range(8)))
     private_key = SETTINGS.service_private_key_cryptography
     return jwt.encode(header=header, payload=payload, key=private_key).decode('utf-8')

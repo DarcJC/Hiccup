@@ -1,14 +1,15 @@
 import strawberry
 
-from hiccup.graphql.base import IsAuthenticated, ObfuscatedID, create_jwt
+from hiccup.graphql.base import IsAuthenticated, create_jwt, Context
+from hiccup.graphql.base import obfuscated_id
 from hiccup.graphql.services import IsValidService
 from hiccup.services import get_media_controller
-from hiccup.graphql.base import obfuscated_id
 
 
 @strawberry.type
 class MediaTokenType:
     room_id: obfuscated_id
+    display_name: str
     max_incoming_bitrate: int
 
 
@@ -25,14 +26,14 @@ class ChannelMutation:
         description="Allocate a media server and get connection info",
         permission_classes=[IsAuthenticated],
     )
-    async def allocate_media_server(self, channel_id: obfuscated_id) -> MediaSignalServerConnectionInfo:
+    async def allocate_media_server(self, channel_id: obfuscated_id, _info: strawberry.Info[Context]) -> MediaSignalServerConnectionInfo:
         # TODO: check permission, waiting for channel controller impl
 
         allocated_service = await get_media_controller().get_or_allocate_channel_room(channel_id)
         if allocated_service is None:
             raise ValueError("Allocating room failed")
 
-        payload = strawberry.asdict(MediaTokenType(room_id=channel_id, max_incoming_bitrate=32000))
+        payload = strawberry.asdict(MediaTokenType(room_id=channel_id, display_name=f'AnonymousUser', max_incoming_bitrate=32000))
 
         return MediaSignalServerConnectionInfo(
             hostname=allocated_service.hostname,
