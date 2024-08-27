@@ -8,8 +8,8 @@ from sqlalchemy.sql.type_api import TypeEngine
 from strawberry.annotation import StrawberryAnnotation
 from strawberry.permission import PermissionExtension
 from strawberry.tools import create_type
-from strawberry.types.base import StrawberryType
 from strawberry.types.field import StrawberryField
+from strawberry.tools import merge_types
 from strawberry import scalars
 
 from hiccup.db import AsyncSessionLocal
@@ -59,8 +59,11 @@ def generate_graphql_types(model: Type[DeclarativeBase], exclude_fields: Optiona
     return graphql_type, input_type
 
 
-def generate_mutations(model: Type[DeclarativeBase], exclude_fields: Optional[list[str]] = None,
-                       required_permissions=None) -> strawberry.type:
+def generate_mutations(
+        model: Type[DeclarativeBase],
+        exclude_fields: Optional[list[str]] = None,
+        required_permissions: Optional[list[str]] = None
+) -> strawberry.type:
     required_permissions = required_permissions or ["admin::admin"]
 
     graphql_type, input_type = generate_graphql_types(model, exclude_fields)
@@ -116,6 +119,42 @@ def generate_mutations(model: Type[DeclarativeBase], exclude_fields: Optional[li
         return create_type(name=f"{model.__name__}Mutation", fields=list(mutations.values()), description=f"Auto generated cud mutation for {model.__name__}")
 
     return create_mutation_class()
+
+
+def generate_multiple_mutations(
+        name: str = "GeneratedMutations",
+        *models: tuple[ Type[DeclarativeBase], Optional[list[str]], Optional[list[str]] ]
+) -> strawberry.type:
+    created_types = tuple([ generate_mutations(*model) for model in models ])
+    return merge_types(name, created_types)
+
+
+def generate_queries(
+        model: Type[DeclarativeBase],
+        exclude_fields: Optional[list[str]] = None,
+        required_permission: Optional[list[str]] = None,
+) -> strawberry.type:
+    required_permissions = required_permission or ["admin::admin"]
+
+    graphql_type, input_type = generate_graphql_types(model, exclude_fields)
+
+    async def retrieve_items(page: int = 0, page_size: int = 10) -> list[graphql_type]:
+        async with AsyncSessionLocal() as session:
+            offset = page * page_size
+            result = await session.scalars(
+                select(model).offset(offset).limit(page_size)
+            ).all()
+            return result
+
+    retrieve_name = to_camel_case(f"retrieve_{model.__name__}")
+    setattr(retrieve_name, "__name__", retrieve_name)
+
+    return create_type(name=f'{model.__name__}Query', fields=[strawberry.field(
+        retrieve_items,
+        description=f"Retrieve paged {model.__name__} instances.",
+        name=retrieve_name,
+        extensions=[PermissionExtension(permissions=[HasPermission(*required_permissions)])],
+    )])
 
 
 def to_camel_case(s: str) -> str:

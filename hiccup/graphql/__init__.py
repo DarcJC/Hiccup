@@ -1,9 +1,8 @@
 import strawberry
-from strawberry.tools import merge_types
 
 from hiccup.db.permission import PermissionGroup
 from hiccup.db.server import Channel
-from hiccup.graphql.base import generate_mutations
+from hiccup.graphql.base import generate_multiple_mutations
 from hiccup.graphql.channel import ChannelMutation
 from hiccup.graphql.context import Context
 from hiccup.graphql.services import ServiceMutation, ServiceQuery
@@ -11,9 +10,11 @@ from hiccup.graphql.user import UserQuery, UserMutation
 from hiccup.graphql.system import SystemQuery
 
 
-PermissionGroupMutation = generate_mutations(PermissionGroup)
-ChannelCudMutation = generate_mutations(Channel)
-GeneratedMutation = strawberry.tools.merge_types("GeneratedMutation", (ChannelCudMutation, PermissionGroupMutation))
+GeneratedMutation = generate_multiple_mutations(
+    "GeneratedMutations",
+    (PermissionGroup, None, None),
+    (Channel, None, None),
+)
 
 
 @strawberry.type
