@@ -8,6 +8,7 @@ from hiccup.services import get_media_controller
 
 @strawberry.type
 class MediaTokenType:
+    service_id: str
     room_id: obfuscated_id
     display_name: str
     max_incoming_bitrate: int
@@ -33,7 +34,7 @@ class ChannelMutation:
         if allocated_service is None:
             raise ValueError("Allocating room failed")
 
-        payload = strawberry.asdict(MediaTokenType(room_id=channel_id, display_name=f'AnonymousUser', max_incoming_bitrate=32000))
+        payload = strawberry.asdict(MediaTokenType(service_id=allocated_service.id, room_id=channel_id, display_name=f'AnonymousUser', max_incoming_bitrate=32000))
 
         return MediaSignalServerConnectionInfo(
             hostname=allocated_service.hostname,

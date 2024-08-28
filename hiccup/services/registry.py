@@ -13,6 +13,7 @@ from hiccup import SETTINGS
 
 
 class ServiceInfo(BaseModel):
+    id: str
     tags: list[str]
     ip: str
     hostname: Optional[str] = None

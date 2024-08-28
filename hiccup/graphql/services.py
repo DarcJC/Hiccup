@@ -41,8 +41,8 @@ class ServiceQuery:
 @strawberry.type
 class ServiceMutation:
     @strawberry.mutation(description="Register a service", permission_classes=[IsValidService])
-    async def register_service(self, category: str, service_id: str, service_info: ServiceInfoInputType) -> ServiceRegistryInfo:
-        await SERVICE_REGISTRY.register_service(category, service_id, service_info.to_pydantic())
+    async def register_service(self, category: str, service_info: ServiceInfoInputType) -> ServiceRegistryInfo:
+        await SERVICE_REGISTRY.register_service(category, service_info.id, service_info.to_pydantic())
         return ServiceRegistryInfo(public_key=SETTINGS.service_public_key)
 
     @strawberry.mutation(description="Lookup services with tags", permission_classes=[IsValidService])
