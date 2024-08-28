@@ -6,6 +6,7 @@ import strawberry
 from sqlalchemy import select, func
 from strawberry.permission import PermissionExtension
 
+from hiccup import SETTINGS
 from hiccup.cache import cache_nonce
 from hiccup.db import AsyncSessionLocal, check_ed25519_signature
 from hiccup.db.user import ClassicIdentify, AnonymousIdentify, AuthToken
@@ -48,6 +49,8 @@ class UserQuery:
 class UserMutation:
     @strawberry.mutation(description="Register classic user", permission_classes=[IsPassedCaptcha])
     async def register_classic(self, username: str, password: str) -> ClassicUser:
+        if not SETTINGS.register_enabled:
+            raise RuntimeError("Registration is not enabled")
         async with AsyncSessionLocal() as session:
             derived_key, salt = ClassicIdentify.encrypt_password(password.encode("utf-8"))
             new_user = ClassicIdentify(user_name=username, password=derived_key, salt=salt)
@@ -63,6 +66,8 @@ class UserMutation:
     async def register_anonymous(self, public_key: Annotated[str, strawberry.argument(
         description="Ed25519 public key in hex"
     )]) -> AnonymousUser:
+        if not SETTINGS.register_enabled:
+            raise RuntimeError("Registration is not enabled")
         public_key_bytes = bytes.fromhex(public_key)
         if not AnonymousIdentify.is_valid_ed25519_public_key(public_key_bytes):
             raise ValueError("Invalid public key")
@@ -145,7 +150,7 @@ class UserMutation:
 
         return False
 
-    @strawberry.mutation(description="Create default administration")
+    @strawberry.mutation(description="Create default administrator", permission_classes=[IsPassedCaptcha])
     async def create_default_admin(self, username: str, password: str) -> ClassicUser:
         async with AsyncSessionLocal() as session:
             stmt = select(func.count()).select_from(ClassicIdentify)

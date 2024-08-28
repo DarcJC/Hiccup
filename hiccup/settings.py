@@ -61,6 +61,8 @@ class Settings(BaseSettings):
     id_obf_secret_key: int = Field(24542592794035)
     id_obf_secret_a: int = Field(2333)
 
+    register_enabled: Optional[bool] = Field(True)
+
     @cached_property
     def service_private_key_cryptography(self) -> ed25519.Ed25519PrivateKey:
         private_key = ed25519.Ed25519PrivateKey.from_private_bytes(self.private_key_bytes)
