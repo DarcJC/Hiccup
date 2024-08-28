@@ -8,7 +8,8 @@ from functools import cached_property, lru_cache
 from typing import Type, Optional, Any, NewType, Union
 
 import strawberry
-from sqlalchemy import select, Column, ARRAY, VARCHAR, BOOLEAN, String, JSON, Table
+from click import option
+from sqlalchemy import select, Column, ARRAY, VARCHAR, BOOLEAN, String, JSON, Table, delete, CursorResult
 from sqlalchemy.orm import DeclarativeBase, joinedload
 from sqlalchemy.sql.type_api import TypeEngine
 from strawberry.annotation import StrawberryAnnotation
@@ -38,7 +39,7 @@ def map_sqlalchemy_engine_type(t: Type[TypeEngine]):
     return t
 
 
-def map_sqlalchemy_column_type(column: Column) -> object:
+def map_sqlalchemy_column_type(column: Column, all_optional: bool = False) -> object:
     sql_type = column.type
     result = sql_type.python_type
     if isinstance(sql_type, ARRAY):
@@ -46,15 +47,16 @@ def map_sqlalchemy_column_type(column: Column) -> object:
     elif isinstance(sql_type, JSON):
         result = scalars.JSON
 
-    if column.name == 'id':
+    if column.name == 'id' or all_optional:
         result = Optional[result]
 
     return result
 
 
 @lru_cache(maxsize=None)
-def generate_graphql_types(model: Type[DeclarativeBase], exclude_fields: Optional[list[str]] = None) -> (Type, Type):
+def generate_graphql_types(model: Type[DeclarativeBase], exclude_fields: Optional[list[str]] = None) -> (Type, Type, Type, Type):
     exclude_fields = exclude_fields or []
+    input_exclude_fields = ['created_at', 'updated_at', 'id']
 
     table = model if isinstance(model, Table) else model.__table__
     table_name = table.name
@@ -69,10 +71,34 @@ def generate_graphql_types(model: Type[DeclarativeBase], exclude_fields: Optiona
         if col.name not in exclude_fields
     ]
 
-    graphql_type = create_type(name=table_name, fields=fields)
-    input_type = create_type(name=f'{table_name}Input', fields=[f for f in fields if f.python_name != "id"], is_input=True)
+    optional_fields = [
+        StrawberryField(
+            python_name=col.name,
+            type_annotation=StrawberryAnnotation(map_sqlalchemy_column_type(col, all_optional=True)),
+            description=f"{col.name} of the {table_name}",
+            default_factory=lambda: None,
+        )
+        for col in table.columns
+        if col.name not in exclude_fields
+    ]
 
-    return graphql_type, input_type
+    partial_optional_fields = [
+        StrawberryField(
+            python_name=col.name,
+            type_annotation=StrawberryAnnotation(map_sqlalchemy_column_type(col, all_optional=col.nullable)),
+            description=f"{col.name} of the {table_name}",
+            default_factory=lambda: None,
+        )
+        for col in table.columns
+        if col.name not in exclude_fields
+    ]
+
+    graphql_type = create_type(name=table_name, fields=fields)
+    input_type = create_type(name=f'{table_name}_input', fields=[f for f in fields if f.python_name not in input_exclude_fields], is_input=True)
+    optional_type = create_type(name=f'{table_name}_optional_input', fields=[f for f in optional_fields if f.python_name not in input_exclude_fields], is_input=True)
+    partial_optional_type = create_type(name=f'{table_name}_partial_optional_input', fields=[f for f in partial_optional_fields if f.python_name not in input_exclude_fields], is_input=True)
+
+    return graphql_type, input_type, optional_type, partial_optional_type
 
 
 @lru_cache(maxsize=None)
@@ -83,7 +109,7 @@ def generate_mutations(
 ) -> strawberry.type:
     required_permissions = required_permissions or ["admin::super_admin"]
 
-    graphql_type, input_type = generate_graphql_types(model, exclude_fields)
+    graphql_type, input_type, optional_type, partial_optional_type = generate_graphql_types(model, exclude_fields)
 
     table = model if isinstance(model, Table) else model.__table__
     table_name = table.name
@@ -91,7 +117,7 @@ def generate_mutations(
     def create_mutation_class():
         mutations: dict[str, any] = {}
 
-        async def create_item(data: input_type) -> graphql_type:
+        async def create_item(data: partial_optional_type) -> graphql_type:
             async with AsyncSessionLocal() as session:
                 item = model(**data.__dict__)
                 session.add(item)
@@ -104,14 +130,15 @@ def generate_mutations(
                              extensions=[PermissionExtension(permissions=[HasPermission(*required_permissions)])],
                              name=to_camel_case(f"create_{table_name}"))
 
-        async def update_item(item_id: int, data: input_type) -> graphql_type:
+        async def update_item(item_id: int, data: optional_type) -> graphql_type:
             async with AsyncSessionLocal() as session:
                 item = await session.scalar(select(model).where(model.id == item_id).limit(1))
                 if item:
                     for key, value in data.__dict__.items():
-                        setattr(item, key, value)
+                        if value is not None:
+                            setattr(item, key, value)
                 else:
-                    item = model(**data.__dict__)
+                    raise ValueError(f"Item with id {item_id} does not exist")
                 session.add(item)
                 await session.commit()
                 await session.refresh(item)
@@ -122,14 +149,11 @@ def generate_mutations(
                              extensions=[PermissionExtension(permissions=[HasPermission(*required_permissions)])],
                              name=to_camel_case(f"update_{table_name}"))
 
-        async def delete_item(item_id: int) -> graphql_type:
+        async def delete_item(item_id: int) -> bool:
             async with AsyncSessionLocal() as session:
-                item = await session.scalar(select(model).where(model.id == item_id).limit(1))
-                if item:
-                    await session.delete(item)
-                    await session.flush()
-                    return True
-                return False
+                item: CursorResult = await session.execute(delete(model).where(model.id == item_id))
+                await session.commit()
+                return item.rowcount != 0
 
         setattr(delete_item, "__name__", to_camel_case(f"delete_{table_name}"))
         mutations[f"delete_{table_name}"] = strawberry.mutation(delete_item, description=f"Delete {table_name}.",
@@ -157,7 +181,7 @@ def generate_queries(
 ) -> strawberry.type:
     required_permissions = required_permission or ["admin::super_admin"]
 
-    graphql_type, input_type = generate_graphql_types(model, exclude_fields)
+    graphql_type, input_type, optional_type, partial_optional_type = generate_graphql_types(model, exclude_fields)
 
     table = model if isinstance(model, Table) else model.__table__
     table_name = table.name
