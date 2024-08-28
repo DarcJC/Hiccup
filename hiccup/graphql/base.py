@@ -4,11 +4,11 @@ import time
 import random
 from datetime import datetime
 from enum import Enum
-from functools import cached_property
+from functools import cached_property, lru_cache
 from typing import Type, Optional, Any, NewType, Union
 
 import strawberry
-from sqlalchemy import select, Column, ARRAY, VARCHAR, BOOLEAN, String, JSON
+from sqlalchemy import select, Column, ARRAY, VARCHAR, BOOLEAN, String, JSON, Table
 from sqlalchemy.orm import DeclarativeBase, joinedload
 from sqlalchemy.sql.type_api import TypeEngine
 from strawberry.annotation import StrawberryAnnotation
@@ -52,25 +52,30 @@ def map_sqlalchemy_column_type(column: Column) -> object:
     return result
 
 
+@lru_cache(maxsize=None)
 def generate_graphql_types(model: Type[DeclarativeBase], exclude_fields: Optional[list[str]] = None) -> (Type, Type):
     exclude_fields = exclude_fields or []
+
+    table = model if isinstance(model, Table) else model.__table__
+    table_name = table.name
 
     fields = [
         StrawberryField(
             python_name=col.name,
             type_annotation=StrawberryAnnotation(map_sqlalchemy_column_type(col)),
-            description=f"{col.name} of the {model.__name__}",
+            description=f"{col.name} of the {table_name}",
         )
-        for col in model.__table__.columns
+        for col in table.columns
         if col.name not in exclude_fields
     ]
 
-    graphql_type = create_type(name=model.__name__, fields=fields)
-    input_type = create_type(name=f'{model.__name__}Input', fields=[f for f in fields if f.python_name != "id"], is_input=True)
+    graphql_type = create_type(name=table_name, fields=fields)
+    input_type = create_type(name=f'{table_name}Input', fields=[f for f in fields if f.python_name != "id"], is_input=True)
 
     return graphql_type, input_type
 
 
+@lru_cache(maxsize=None)
 def generate_mutations(
         model: Type[DeclarativeBase],
         exclude_fields: Optional[list[str]] = None,
@@ -79,6 +84,9 @@ def generate_mutations(
     required_permissions = required_permissions or ["admin::super_admin"]
 
     graphql_type, input_type = generate_graphql_types(model, exclude_fields)
+
+    table = model if isinstance(model, Table) else model.__table__
+    table_name = table.name
 
     def create_mutation_class():
         mutations: dict[str, any] = {}
@@ -91,10 +99,10 @@ def generate_mutations(
                 await session.refresh(item)
                 return item
 
-        setattr(create_item, "__name__", to_camel_case(f"create_{model.__name__}"))
-        mutations[to_camel_case(f"create_{model.__name__}")] = strawberry.mutation(create_item, description=f"Create {model.__name__}",
+        setattr(create_item, "__name__", to_camel_case(f"create_{table_name}"))
+        mutations[to_camel_case(f"create_{table_name}")] = strawberry.mutation(create_item, description=f"Create {table_name}",
                              extensions=[PermissionExtension(permissions=[HasPermission(*required_permissions)])],
-                             name=to_camel_case(f"create_{model.__name__}"))
+                             name=to_camel_case(f"create_{table_name}"))
 
         async def update_item(item_id: int, data: input_type) -> graphql_type:
             async with AsyncSessionLocal() as session:
@@ -109,10 +117,10 @@ def generate_mutations(
                 await session.refresh(item)
                 return item
 
-        setattr(update_item, "__name__", to_camel_case(f"update_{model.__name__}"))
-        mutations[to_camel_case(f"update_{model.__name__}")] = strawberry.mutation(update_item, description=f"Update {model.__name__}. Create if not exist.",
+        setattr(update_item, "__name__", to_camel_case(f"update_{table_name}"))
+        mutations[to_camel_case(f"update_{table_name}")] = strawberry.mutation(update_item, description=f"Update {table_name}. Create if not exist.",
                              extensions=[PermissionExtension(permissions=[HasPermission(*required_permissions)])],
-                             name=to_camel_case(f"update_{model.__name__}"))
+                             name=to_camel_case(f"update_{table_name}"))
 
         async def delete_item(item_id: int) -> graphql_type:
             async with AsyncSessionLocal() as session:
@@ -123,12 +131,12 @@ def generate_mutations(
                     return True
                 return False
 
-        setattr(delete_item, "__name__", to_camel_case(f"delete_{model.__name__}"))
-        mutations[f"delete_{model.__name__}"] = strawberry.mutation(delete_item, description=f"Delete {model.__name__}.",
+        setattr(delete_item, "__name__", to_camel_case(f"delete_{table_name}"))
+        mutations[f"delete_{table_name}"] = strawberry.mutation(delete_item, description=f"Delete {table_name}.",
                              extensions=[PermissionExtension(permissions=[HasPermission(*required_permissions)])],
-                             name=to_camel_case(f"delete_{model.__name__}"))
+                             name=to_camel_case(f"delete_{table_name}"))
 
-        return create_type(name=f"{model.__name__}Mutation", fields=list(mutations.values()), description=f"Auto generated cud mutation for {model.__name__}")
+        return create_type(name=f"{table_name}Mutation", fields=list(mutations.values()), description=f"Auto generated cud mutation for {table_name}")
 
     return create_mutation_class()
 
@@ -141,6 +149,7 @@ def generate_multiple_mutations(
     return merge_types(name, created_types)
 
 
+@lru_cache(maxsize=None)
 def generate_queries(
         model: Type[DeclarativeBase],
         exclude_fields: Optional[list[str]] = None,
@@ -150,6 +159,9 @@ def generate_queries(
 
     graphql_type, input_type = generate_graphql_types(model, exclude_fields)
 
+    table = model if isinstance(model, Table) else model.__table__
+    table_name = table.name
+
     async def retrieve_items(page: int = 0, page_size: int = 10) -> list[graphql_type]:
         async with AsyncSessionLocal() as session:
             offset = page * page_size
@@ -158,22 +170,22 @@ def generate_queries(
             ).all()
             return result
 
-    retrieve_name = to_camel_case(f"retrieve_{model.__name__}")
-    setattr(retrieve_name, "__name__", retrieve_name)
+    retrieve_name = to_camel_case(f"retrieve_{table_name}")
+    setattr(retrieve_items, "__name__", retrieve_name)
 
-    return create_type(name=f'{model.__name__}Query', fields=[strawberry.field(
+    return create_type(name=f'{table_name}Query', fields=[strawberry.field(
         retrieve_items,
-        description=f"Retrieve paged {model.__name__} instances.",
+        description=f"Retrieve paged {table_name} instances.",
         name=retrieve_name,
         extensions=[PermissionExtension(permissions=[HasPermission(*required_permissions)])],
     )])
 
 
 def generate_multiple_queries(
-        name: str = "GeneratedMutations",
+        name: str = "GeneratedQueries",
         *models: tuple[ Type[DeclarativeBase], Optional[list[str]], Optional[list[str]] ],
 ) -> strawberry.type:
-    created_types = tuple([ generate_queries(*models) for model in models ])
+    created_types = tuple([ generate_queries(*model) for model in models ])
     return merge_types(name, created_types)
 
 

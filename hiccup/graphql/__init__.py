@@ -1,8 +1,8 @@
 import strawberry
 
 from hiccup.db.permission import PermissionGroup
-from hiccup.db.server import Channel
-from hiccup.graphql.base import generate_multiple_mutations
+from hiccup.db.server import Channel, VirtualServer
+from hiccup.graphql.base import generate_multiple_mutations, generate_multiple_queries
 from hiccup.graphql.channel import ChannelMutation
 from hiccup.graphql.base import Context
 from hiccup.graphql.services import ServiceMutation, ServiceQuery
@@ -14,6 +14,14 @@ GeneratedMutation = generate_multiple_mutations(
     "GeneratedMutations",
     (PermissionGroup, None, None),
     (Channel, None, None),
+    (VirtualServer, None, None),
+)
+
+GeneratedQuery = generate_multiple_queries(
+    "GeneratedQueries",
+    (PermissionGroup, None, None),
+    (Channel, None, None),
+    (VirtualServer, None, None),
 )
 
 
@@ -22,6 +30,7 @@ class Query(
     UserQuery,
     SystemQuery,
     ServiceQuery,
+    GeneratedQuery,
 ):
     pass
 
