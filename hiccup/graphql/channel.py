@@ -1,6 +1,9 @@
 import strawberry
+from sqlalchemy import select
 
-from hiccup.graphql.base import IsAuthenticated, create_jwt, Context
+from hiccup.db import AsyncSessionLocal
+from hiccup.db.server import Channel
+from hiccup.graphql.base import IsAuthenticated, create_jwt, Context, ObfuscatedID
 from hiccup.graphql.base import obfuscated_id
 from hiccup.graphql.services import IsValidService
 from hiccup.services import get_media_controller
@@ -10,6 +13,7 @@ from hiccup.services import get_media_controller
 class MediaTokenType:
     service_id: str
     room_id: obfuscated_id
+    server_id: obfuscated_id
     display_name: str
     max_incoming_bitrate: int
 
@@ -29,18 +33,29 @@ class ChannelMutation:
     )
     async def allocate_media_server(self, channel_id: obfuscated_id, _info: strawberry.Info[Context]) -> MediaSignalServerConnectionInfo:
         # TODO: check permission, waiting for channel controller impl
+        async with AsyncSessionLocal() as session:
+            channel = await session.scalar(select(Channel).where(Channel.id == channel_id).limit(1))
 
-        allocated_service = await get_media_controller().get_or_allocate_channel_room(channel_id)
-        if allocated_service is None:
-            raise ValueError("Allocating room failed")
+            if channel is None:
+                raise ValueError("Channel not found")
 
-        payload = strawberry.asdict(MediaTokenType(service_id=allocated_service.id, room_id=channel_id, display_name=f'AnonymousUser', max_incoming_bitrate=32000))
+            allocated_service = await get_media_controller().get_or_allocate_channel_room(channel_id)
+            if allocated_service is None:
+                raise ValueError("Allocating room failed")
 
-        return MediaSignalServerConnectionInfo(
-            hostname=allocated_service.hostname,
-            port=allocated_service.port,
-            token=create_jwt(payload),
-        )
+            payload = {
+                "service_id": allocated_service.id,
+                "room_id": ObfuscatedID.serialize(channel_id),
+                "server_id": ObfuscatedID.serialize(channel.server_id),
+                "display_name": f'AnonymousUser',
+                "max_incoming_bitrate": 32000,
+            }
+
+            return MediaSignalServerConnectionInfo(
+                hostname=allocated_service.hostname,
+                port=allocated_service.port,
+                token=create_jwt(payload),
+            )
 
     @strawberry.field(
         description="Deallocate a media server. Might occur when room is empty for a period.",
