@@ -44,7 +44,11 @@ class MediaController:
                     allocated_info = await perform_allocate()
                 else:
                     allocated_info = ServiceInfo(**allocated_info)
-                    # TODO: Check if service available
+                    # Update to latest info
+                    allocated_info = await self.registry.get_service_info(category=self.category, service_id=allocated_info.id)
+                    # Service expired
+                    if allocated_info is None:
+                        allocated_info = await perform_allocate()
 
                 return allocated_info
 

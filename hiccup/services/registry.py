@@ -9,6 +9,7 @@ from typing import Optional
 import redis.asyncio as redis
 import redis.asyncio.lock as redis_lock
 from pydantic import BaseModel
+from redis.asyncio.client import PubSub
 
 from hiccup import SETTINGS
 
@@ -48,14 +49,32 @@ class ServiceController(abc.ABC):
 class ServiceRegistry:
     pool: redis.ConnectionPool
     _namespace: str
+    service_expire_pubsub: PubSub
+    pub_sub_task: asyncio.Task
 
     def __init__(self):
         self.pool = redis.ConnectionPool().from_url(SETTINGS.service_registry_redis_url)
         self._namespace = SETTINGS.service_registry_namespace
 
-    async def setup_key_notification(self):
-        async with self._redis_session() as session:
-            await session.config_set("notify-keyspace-events", "KEgx")
+    async def setup(self):
+        """
+        We don't need pubsub yet
+        """
+        # async with self._redis_session() as session:
+        #     await session.config_set("notify-keyspace-events", "KEgx")
+        #
+        #     self.service_expire_pubsub = session.pubsub()
+        #     await self.service_expire_pubsub.psubscribe("__keyevent@1__:expired")
+        #     self.pub_sub_task = asyncio.create_task(self.service_expire_pubsub.run())
+        pass
+
+    async def dispose(self):
+        """
+        We don't need pubsub yet
+        """
+        # self.pub_sub_task.cancel()
+        # await self.service_expire_pubsub.close()
+        pass
 
     def _redis_session(self):
         class Session:
@@ -77,24 +96,23 @@ class ServiceRegistry:
 
         return Session(pool=self.pool)
 
-    def _redis_lock(self, client: redis.Redis, lock_key: str, timeout: Optional[float] = None):
+    def _redis_lock(self, client: redis.Redis, lock_key: str, timeout: Optional[float] = None, block: bool = True, blocking_timeout: Optional[float] = None):
         class LockManager:
             _client: redis.Redis
             lock: redis_lock.Lock
 
-            def __init__(self, _client: redis.Redis, _lock_key: str, _timeout: Optional[float] = None):
+            def __init__(self, _client: redis.Redis, _lock_key: str, _timeout: Optional[float] = None, _block: bool = True, _blocking_timeout: Optional[float] = None):
                 self._client = _client
-                self.lock = self._client.lock(name=_lock_key, timeout=_timeout)
+                self.lock = self._client.lock(name=_lock_key, timeout=_timeout, blocking=_block, blocking_timeout=_blocking_timeout)
 
             async def __aenter__(self):
-                await self.lock.acquire()
-                return None
+                return await self.lock.acquire()
 
             async def __aexit__(self, exc_type, exc_val, exc_tb):
                 await self.lock.release()
                 return True
 
-        return LockManager(_client=client, _lock_key=lock_key, _timeout=timeout)
+        return LockManager(_client=client, _lock_key=lock_key, _timeout=timeout, _block=block, _blocking_timeout=blocking_timeout)
 
     @property
     def service_ttl(self):
@@ -139,6 +157,15 @@ class ServiceRegistry:
         key = self.get_key(category, service_id)
         async with self._redis_session() as client:
             return await client.delete(key)
+
+    async def get_service_info(self, category: str, service_id: str) -> Optional[ServiceInfo]:
+        key = self.get_key(category, service_id)
+        async with self._redis_session() as client:
+            service_info = await client.get(key)
+            if service_info is not None:
+                service_info = ServiceInfo.model_validate_json(service_info)
+                return service_info
+        return None
 
     async def set_service_metadata(self, category: str, name: str, metadata: dict, ex: timedelta = None, lock: bool = False):
         key = self.get_key(category, f'metadata::{name}')

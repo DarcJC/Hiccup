@@ -40,9 +40,10 @@ graphql_app = GraphQLRouter(
 @asynccontextmanager
 async def lifespan(a: FastAPI):
     # Setup
-    await SERVICE_REGISTRY.setup_key_notification()
+    await SERVICE_REGISTRY.setup()
     yield
     # Clean up
+    await SERVICE_REGISTRY.dispose()
 
 app = FastAPI(lifespan=lifespan)
 app.include_router(graphql_app, prefix="/graphql")
