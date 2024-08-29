@@ -18,7 +18,7 @@ from strawberry.permission import PermissionExtension, BasePermission
 from strawberry.tools import create_type
 from strawberry.types.field import StrawberryField
 from strawberry.tools import merge_types
-from strawberry import scalars, Info
+from strawberry import scalars, Info, UNSET
 
 from authlib.jose import JsonWebToken
 
@@ -76,7 +76,7 @@ def generate_graphql_types(model: Type[DeclarativeBase], exclude_fields: Optiona
             python_name=col.name,
             type_annotation=StrawberryAnnotation(map_sqlalchemy_column_type(col, all_optional=True)),
             description=f"{col.name} of the {table_name}",
-            default_factory=lambda: None,
+            default_factory=lambda: UNSET,
         )
         for col in table.columns
         if col.name not in exclude_fields
@@ -87,7 +87,7 @@ def generate_graphql_types(model: Type[DeclarativeBase], exclude_fields: Optiona
             python_name=col.name,
             type_annotation=StrawberryAnnotation(map_sqlalchemy_column_type(col, all_optional=col.nullable)),
             description=f"{col.name} of the {table_name}",
-            default_factory=lambda: None,
+            default_factory=lambda: UNSET,
         )
         for col in table.columns
         if col.name not in exclude_fields
@@ -135,7 +135,7 @@ def generate_mutations(
                 item = await session.scalar(select(model).where(model.id == item_id).limit(1))
                 if item:
                     for key, value in data.__dict__.items():
-                        if value is not None:
+                        if value is not UNSET:
                             setattr(item, key, value)
                 else:
                     raise ValueError(f"Item with id {item_id} does not exist")
