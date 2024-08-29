@@ -1,4 +1,5 @@
 import abc
+import asyncio
 import enum
 import json
 from datetime import timedelta
@@ -51,6 +52,10 @@ class ServiceRegistry:
     def __init__(self):
         self.pool = redis.ConnectionPool().from_url(SETTINGS.service_registry_redis_url)
         self._namespace = SETTINGS.service_registry_namespace
+
+    async def setup_key_notification(self):
+        async with self._redis_session() as session:
+            await session.config_set("notify-keyspace-events", "KEgx")
 
     def _redis_session(self):
         class Session:
