@@ -239,6 +239,7 @@ obfuscated_id = strawberry.scalar(
 
 class Context(BaseContext):
     async def user(self) -> Optional[Union['ClassicUser', 'AnonymousUser']]:
+        # TODO: cache in redis
         if not self.request:
             return None
 

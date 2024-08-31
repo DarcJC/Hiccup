@@ -12,6 +12,7 @@ from sqlalchemy import Column, String, DateTime, func, Sequence, LargeBinary, Bi
 from sqlalchemy.orm import relationship, validates
 
 from hiccup import SETTINGS
+from hiccup.db.server import user_joined_server_table
 from hiccup.db.base import Base
 from hiccup.db.permission import user_permission_group
 
@@ -54,6 +55,7 @@ class ClassicIdentify(Base):
     auth_tokens = relationship('AuthToken', back_populates='classic_identify')
     anonymous_identifies = relationship('AnonymousIdentify', back_populates='owner')
     permission_groups = relationship('PermissionGroup', secondary=user_permission_group, back_populates='classic_identifies')
+    joined_servers = relationship('VirtualServer', secondary=user_joined_server_table, back_populates="joined_users")
 
     @staticmethod
     def encrypt_password(password: bytes, salt: Optional[bytes] = None) -> (bytes, bytes):
