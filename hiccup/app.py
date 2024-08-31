@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 
 import strawberry
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from strawberry.fastapi import GraphQLRouter
 from strawberry.schema.config import StrawberryConfig
 from strawberry.subscriptions import GRAPHQL_TRANSPORT_WS_PROTOCOL, GRAPHQL_WS_PROTOCOL
@@ -47,3 +48,11 @@ async def lifespan(a: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 app.include_router(graphql_app, prefix="/graphql")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=SETTINGS.allow_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)

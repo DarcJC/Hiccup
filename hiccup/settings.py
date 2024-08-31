@@ -63,6 +63,8 @@ class Settings(BaseSettings):
 
     register_enabled: Optional[bool] = Field(True)
 
+    allow_origins: Optional[list[str]] = Field(['http://localhost:5173'])
+
     @cached_property
     def service_private_key_cryptography(self) -> ed25519.Ed25519PrivateKey:
         private_key = ed25519.Ed25519PrivateKey.from_private_bytes(self.private_key_bytes)
