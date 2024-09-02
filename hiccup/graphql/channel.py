@@ -175,3 +175,15 @@ class ChannelQuery:
             return list(map(lambda x: VirtualServerInfo(id=x.id, name=x.name, configuration=x.configuration), user.joined_servers))
 
         return []
+
+    @strawberry.field(
+        description="Get server info",
+        permission_classes=[IsAuthenticated],
+    )
+    async def server_info(self, server_id: obfuscated_id) -> VirtualServerInfo:
+        async with AsyncSessionLocal() as session:
+            stmt = select(VirtualServer).where(VirtualServer.id == server_id)
+            result: Optional[VirtualServer] = await session.scalar(stmt)
+            if result is None:
+                raise ValueError("Server not found")
+            return VirtualServerInfo(id=result.id, name=result.name, configuration=result.configuration)
