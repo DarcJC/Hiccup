@@ -8,8 +8,7 @@ from functools import cached_property, lru_cache
 from typing import Type, Optional, Any, NewType, Union
 
 import strawberry
-from click import option
-from sqlalchemy import select, Column, ARRAY, VARCHAR, BOOLEAN, String, JSON, Table, delete, CursorResult
+from sqlalchemy import select, Column, ARRAY, VARCHAR, BOOLEAN, String, JSON, Table, delete, CursorResult, and_, func
 from sqlalchemy.orm import DeclarativeBase, joinedload
 from sqlalchemy.sql.type_api import TypeEngine
 from strawberry.annotation import StrawberryAnnotation
@@ -301,6 +300,13 @@ class UserType(str, Enum):
     ANONYMOUS = "anonymous"
 
 
+@strawberry.type
+class AuthTokenInfo:
+    id: obfuscated_id
+    issued_at: datetime
+    revoked_at: datetime
+
+
 @strawberry.interface
 class UserBase:
     id: obfuscated_id
@@ -313,6 +319,39 @@ class UserBase:
 class ClassicUser(UserBase):
     type: UserType = UserType.CLASSIC
     username: str
+
+    @strawberry.field(
+        description="The auth token user have",
+    )
+    async def auth_tokens(self, info: Info[Context]) -> list[AuthTokenInfo]:
+        current_user = await info.context.user()
+
+        if current_user is None or current_user.id != self.id:
+            raise ValueError(f"Access denied")
+
+        async with AsyncSessionLocal() as session:
+            stmt = select(AuthToken).where(
+                and_(
+                    self.id == AuthToken.classic_user_id,
+                    AuthToken.revoked_at > func.now()
+                )
+            )
+            rows = await session.scalars(stmt)
+            return list(map(lambda row: AuthTokenInfo(id=row.id, issued_at=row.issued_at, revoked_at=row.revoked_at), rows))
+
+    @strawberry.field(
+        description="The anonymous identify user own",
+    )
+    async def anonymous_identifies(self, info: Info[Context]) -> list['AnonymousUser']:
+        current_user = await info.context.user()
+
+        if current_user is None or current_user.id != self.id:
+            raise ValueError(f"Access denied")
+
+        async with AsyncSessionLocal() as session:
+            stmt = select(AnonymousIdentify).where(self.id == AnonymousIdentify.owner_id)
+            rows = await session.scalars(stmt)
+            return list(map(lambda row: AnonymousUser(id=row.id, public_key=row.public_key.hex().upper(), created_at=row.created_at, updated_at=row.updated_at), rows))
 
 
 @strawberry.type

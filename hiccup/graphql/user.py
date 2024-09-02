@@ -85,7 +85,8 @@ class UserMutation:
     @strawberry.mutation(description="Login classic user", permission_classes=[IsPassedCaptcha])
     async def login_classic(self, username: str, password: str) -> SessionToken:
         async with AsyncSessionLocal() as session:
-            db_user: ClassicIdentify = (await session.scalars(select(ClassicIdentify).where(ClassicIdentify.user_name == username).limit(1))).one_or_none()
+            db_user: ClassicIdentify = (await session.scalars(select(ClassicIdentify).where(
+                username == ClassicIdentify.user_name).limit(1))).one_or_none()
             if db_user is None or not db_user.is_password_valid(password.encode("utf-8")):
                 raise ValueError(f"User {username} not found or invalid password")
 
@@ -104,7 +105,8 @@ class UserMutation:
         verify_action_signature('login', public_key_bytes=public_key_bytes, timestamp=timestamp, nonce=nonce, signature=signature)
 
         async with AsyncSessionLocal() as session:
-            db_user: AnonymousIdentify = await session.scalar(select(AnonymousIdentify).where(AnonymousIdentify.public_key == public_key_bytes).limit(1))
+            db_user: AnonymousIdentify = await session.scalar(select(AnonymousIdentify).where(
+                public_key_bytes == AnonymousIdentify.public_key).limit(1))
             if db_user is None:
                 raise ValueError(f"User with public key '{public_key}' not found")
 
@@ -133,7 +135,8 @@ class UserMutation:
             verify_action_signature(f'bind-to-{user.id}', public_key_bytes=public_key_bytes, timestamp=timestamp, nonce=nonce, signature=signature)
 
             async with AsyncSessionLocal() as session:
-                db_user: AnonymousIdentify = await session.scalar(select(AnonymousIdentify).where(AnonymousIdentify.public_key == public_key_bytes).limit(1))
+                db_user: AnonymousIdentify = await session.scalar(select(AnonymousIdentify).where(
+                    public_key_bytes == AnonymousIdentify.public_key).limit(1))
                 if db_user is None:
                     db_user = AnonymousIdentify(public_key=public_key_bytes)
                     session.add(db_user)
